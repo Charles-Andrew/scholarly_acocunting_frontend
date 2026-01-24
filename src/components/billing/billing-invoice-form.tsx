@@ -206,7 +206,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
   // Check if invoice has content to save as draft
   const canSaveDraft = hasUnsavedChanges
 
-  // Check if invoice is ready to finalize (all required fields)
+  // Check if invoice is ready to submit for approval (all required fields)
   const canFinalize =
     selectedClientId &&
     selectedIncomeCategoryId &&
@@ -227,7 +227,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
     return `INV-${dateStr}-${sequence}`
   }
 
-  const saveInvoice = async (status: "draft" | "finalized") => {
+  const saveInvoice = async (status: "draft" | "for_approval") => {
     if (!selectedClientId || !selectedIncomeCategoryId || !date) {
       toast.error({
         title: "Missing Fields",
@@ -240,6 +240,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
     try {
       if (isEditMode && invoice) {
         // UPDATE existing invoice
+        const isSubmittingForApproval = status === "for_approval"
         const { error: invoiceError } = await supabase
           .from("billing_invoices")
           .update({
@@ -253,6 +254,10 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
             bank_account_id: selectedBankAccountId || null,
             prepared_by: preparedById || null,
             approved_by: approvedById || null,
+            // Apply signature when submitting for approval
+            signed: isSubmittingForApproval ? true : invoice.signed,
+            signed_at: isSubmittingForApproval ? new Date().toISOString() : invoice.signed_at,
+            signed_by: isSubmittingForApproval ? preparedById : invoice.signed_by,
             updated_at: new Date().toISOString(),
           })
           .eq("id", invoiceId)
@@ -635,22 +640,20 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
             <Link href="/billing-invoice">Cancel</Link>
           </Button>
         )}
-        {!isEditMode && (
-          <Button
-            variant="secondary"
-            onClick={() => saveInvoice("draft")}
-            disabled={isSaving || !canSaveDraft}
-            title={!canSaveDraft ? "Fill in at least one field to save as draft" : ""}
-          >
-            {isSaving ? "Saving..." : "Save as Draft"}
-          </Button>
-        )}
         <Button
-          onClick={() => saveInvoice(isEditMode && invoice?.status === "finalized" ? "finalized" : isEditMode ? "finalized" : "finalized")}
-          disabled={isSaving || !canFinalize}
-          title={!canFinalize ? "Fill in all required fields to finalize" : ""}
+          variant="secondary"
+          onClick={() => saveInvoice("draft")}
+          disabled={isSaving || !canSaveDraft}
+          title={!canSaveDraft ? "Fill in at least one field to save as draft" : ""}
         >
-          {isSaving ? "Saving..." : isEditMode ? "Update" : "Finalize"}
+          {isSaving ? "Saving..." : "Save as Draft"}
+        </Button>
+        <Button
+          onClick={() => saveInvoice("for_approval")}
+          disabled={isSaving || !canFinalize}
+          title={!canFinalize ? "Fill in all required fields to submit" : ""}
+        >
+          {isSaving ? "Saving..." : "Submit for Approval"}
         </Button>
       </div>
     </div>

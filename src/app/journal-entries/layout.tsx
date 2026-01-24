@@ -5,5 +5,5 @@ export default function JournalEntriesLayout({
 }: {
   children: React.ReactNode
 }) {
-  return <AppLayout>{children}</AppLayout>
+  return <AppLayout showThemeToggle>{children}</AppLayout>
 }

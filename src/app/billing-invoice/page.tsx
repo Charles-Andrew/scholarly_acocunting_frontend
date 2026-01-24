@@ -9,7 +9,7 @@ import {
   getPaginationRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { ChevronLeft, ChevronRight, Eye, Pencil, Printer, Trash2 } from "lucide-react"
+import { ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 
 import { Button } from "@/components/ui/button"
@@ -25,7 +25,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
-import type { Invoice } from "@/lib/types"
+import type { Invoice } from "@/lib/types/invoice"
 import { toast } from "@/hooks/use-toast"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Plus } from "lucide-react"
@@ -130,11 +130,15 @@ export default function BillingInvoicePage() {
   const getStatusBadge = (status: string) => {
     const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
       draft: "secondary",
-      finalized: "default",
-      paid: "outline",
-      cancelled: "destructive",
+      for_approval: "outline",
+      approved: "default",
     }
-    return <Badge variant={variants[status] || "outline"}>{status}</Badge>
+    const labels: Record<string, string> = {
+      draft: "Draft",
+      for_approval: "For Approval",
+      approved: "Approved",
+    }
+    return <Badge variant={variants[status] || "outline"}>{labels[status] || status}</Badge>
   }
 
   const columns: ColumnDef<Invoice>[] = [
@@ -163,7 +167,7 @@ export default function BillingInvoicePage() {
       header: "Status",
       cell: ({ row }) => {
         const status = row.getValue("status") as string
-        return getStatusBadge(status.charAt(0).toUpperCase() + status.slice(1))
+        return getStatusBadge(status)
       },
     },
     {
@@ -180,27 +184,20 @@ export default function BillingInvoicePage() {
         const invoice = row.original
         return (
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" asChild>
-              <Link href={`/billing-invoice/${invoice.id}`}>
-                <Eye className="h-4 w-4" />
-              </Link>
-            </Button>
+            {(invoice.status === "for_approval" || invoice.status === "approved") && (
+              <Button variant="ghost" size="icon" asChild>
+                <Link href={`/billing-invoice/${invoice.id}/view`}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-eye">
+                    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                </Link>
+              </Button>
+            )}
             <Button variant="ghost" size="icon" asChild>
               <Link href={`/billing-invoice/${invoice.id}/edit`}>
                 <Pencil className="h-4 w-4" />
               </Link>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                toast.info({
-                  title: "Print",
-                  description: `Print invoice ${invoice.invoice_number}`,
-                })
-              }}
-            >
-              <Printer className="h-4 w-4" />
             </Button>
             <ConfirmDialog
               trigger={

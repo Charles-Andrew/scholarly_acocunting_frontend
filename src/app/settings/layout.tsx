@@ -5,5 +5,5 @@ export default function SettingsLayout({
 }: {
   children: React.ReactNode
 }) {
-  return <AppLayout>{children}</AppLayout>
+  return <AppLayout showThemeToggle>{children}</AppLayout>
 }
