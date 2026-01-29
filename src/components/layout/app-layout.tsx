@@ -13,6 +13,7 @@ import {
   History,
   BarChart,
   User,
+  Receipt,
 } from "lucide-react"
 
 import {
@@ -70,6 +71,11 @@ const defaultNavItems: NavItem[] = [
     title: "Journal Entries",
     url: "/journal-entries",
     icon: FileText,
+  },
+  {
+    title: "General Voucher",
+    url: "/general-voucher",
+    icon: Receipt,
   },
   {
     title: "Reports",

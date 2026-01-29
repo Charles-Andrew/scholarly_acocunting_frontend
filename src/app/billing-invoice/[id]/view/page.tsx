@@ -57,11 +57,18 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
   const [bankAccounts, setBankAccounts] = React.useState<BankAccount[]>([])
   const [users, setUsers] = React.useState<User[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
+  const [currentUserId, setCurrentUserId] = React.useState<string | null>(null)
   const [preparedBySignature, setPreparedBySignature] = React.useState<string | null>(null)
   const [approvedBySignature, setApprovedBySignature] = React.useState<string | null>(null)
 
   const fetchData = React.useCallback(async () => {
     try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setCurrentUserId(user.id)
+      }
+
       // Fetch invoice
       const { data: invoiceData, error: invoiceError } = await supabase
         .from("billing_invoices")
@@ -174,17 +181,18 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
 
   const handleApprove = async () => {
     try {
-      const { error } = await supabase
-        .from("billing_invoices")
-        .update({
-          status: "approved",
-          signed: true,
-          signed_at: new Date().toISOString(),
-          signed_by: invoice?.approved_by,
-        })
-        .eq("id", resolvedParams.id)
+      const response = await fetch(`/api/billing-invoices/${resolvedParams.id}/approve`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      })
 
-      if (error) throw error
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to approve invoice")
+      }
 
       toast.success({
         title: "Invoice Approved",
@@ -195,7 +203,7 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
       console.error("Error approving invoice:", error)
       toast.error({
         title: "Error",
-        description: "Failed to approve invoice.",
+        description: error instanceof Error ? error.message : "Failed to approve invoice.",
       })
     }
   }
@@ -285,7 +293,7 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
           {getStatusBadge(invoice.status)}
         </div>
         <div className="flex items-center gap-2">
-          {invoice.status === "for_approval" && (
+          {invoice.status === "for_approval" && currentUserId === invoice.approved_by && (
             <Button variant="outline" onClick={handleApprove}>
               <CheckCircle2 className="mr-2 h-4 w-4" />
               Approve
