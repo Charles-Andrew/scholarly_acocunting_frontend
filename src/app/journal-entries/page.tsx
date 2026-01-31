@@ -7,7 +7,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { Trash2, Plus } from "lucide-react"
+import { Trash2, Plus, Eye } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 
 import { Button } from "@/components/ui/button"
@@ -49,8 +49,18 @@ export default function JournalEntriesPage() {
 
   const handleDeleteEntry = async (entryId: string) => {
     try {
+      // First delete related records from account_titles_billing_invoices
+      const { error: linkError } = await supabase
+        .from("account_titles_billing_invoices")
+        .delete()
+        .eq("journal_entry_id", entryId)
+
+      if (linkError) throw linkError
+
+      // Then delete the journal entry
       const { error } = await supabase.from("journal_entries").delete().eq("id", entryId)
       if (error) throw error
+
       toast.success({ title: "Deleted" })
       fetchEntries()
     } catch (error) {
@@ -64,21 +74,43 @@ export default function JournalEntriesPage() {
 
   const columns: ColumnDef<Record<string, unknown>>[] = [
     { accessorKey: "id", header: "ID" },
-    { accessorKey: "reference", header: "Reference" },
-    { accessorKey: "remarks", header: "Remarks" },
-    { accessorKey: "created_at", header: "Date" },
+    {
+      accessorKey: "date",
+      header: "Date",
+      cell: ({ row }) => {
+        const dateValue = row.getValue("date") as string
+        if (!dateValue) return ""
+        const date = new Date(dateValue)
+        return date.toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric"
+        })
+      }
+    },
     {
       id: "actions",
       header: "",
       cell: ({ row }) => (
-        <ConfirmDialog
-          trigger={<Button variant="ghost" size="icon"><Trash2 className="h-4 w-4 text-destructive" /></Button>}
-          title="Delete"
-          description="Are you sure?"
-          confirmText="Delete"
-          onConfirm={() => handleDeleteEntry(row.original.id as string)}
-          destructive
-        />
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            asChild
+          >
+            <Link href={`/journal-entries/${row.original.id}`}>
+              <Eye className="h-4 w-4" />
+            </Link>
+          </Button>
+          <ConfirmDialog
+            trigger={<Button variant="ghost" size="icon"><Trash2 className="h-4 w-4 text-destructive" /></Button>}
+            title="Delete"
+            description="Are you sure?"
+            confirmText="Delete"
+            onConfirm={() => handleDeleteEntry(row.original.id as string)}
+            destructive
+          />
+        </div>
       ),
     },
   ]
@@ -96,7 +128,7 @@ export default function JournalEntriesPage() {
         <Button asChild>
           <Link href="/journal-entries/generate">
             <Plus className="mr-2 h-4 w-4" />
-            Generate from Invoice
+            Create
           </Link>
         </Button>
       </div>
@@ -125,7 +157,9 @@ export default function JournalEntriesPage() {
                   table.getRowModel().rows.map((row) => (
                     <TableRow key={row.id}>
                       {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id}>{String(cell.getValue() ?? "-")}</TableCell>
+                        <TableCell key={cell.id}>
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
                       ))}
                     </TableRow>
                   ))

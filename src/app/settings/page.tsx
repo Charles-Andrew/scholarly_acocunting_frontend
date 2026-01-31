@@ -57,6 +57,7 @@ export default function SettingsPage() {
     position: "",
   })
   const [isSubmitting, setIsSubmitting] = React.useState(false)
+  const [isSignatureModalOpen, setIsSignatureModalOpen] = React.useState(false)
 
   const supabase = createClient()
 
@@ -268,17 +269,59 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent>
           {currentUserId ? (
-            <SignaturePad
-              userId={currentUserId}
-              initialSignature={currentUser?.signature_image}
-              onSignatureSaved={() => {
-                fetchCurrentUser()
-                toast.success({
-                  title: "Signature Saved",
-                  description: "Your signature has been saved successfully.",
-                })
-              }}
-            />
+            <div className="space-y-4">
+              {currentUser?.signature_image ? (
+                <div className="space-y-3">
+                  <div className="text-sm font-medium text-muted-foreground">
+                    Current Active Signature
+                  </div>
+                  <div className="border rounded-md p-4 bg-white inline-block">
+                    <img
+                      src={currentUser.signature_image}
+                      alt="Your active signature"
+                      className="max-h-32 max-w-full object-contain"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    This signature will be used on all official documents and invoices.
+                  </p>
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground py-4">
+                  No signature set. Please add your signature.
+                </div>
+              )}
+
+              <Dialog open={isSignatureModalOpen} onOpenChange={setIsSignatureModalOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    {currentUser?.signature_image ? 'Modify Signature' : 'Add Signature'}
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>{currentUser?.signature_image ? 'Update Signature' : 'Add Signature'}</DialogTitle>
+                    <DialogDescription>
+                      Draw your signature in the area below. Click save when you&apos;re satisfied.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="py-4">
+                    <SignaturePad
+                      userId={currentUserId}
+                      initialSignature={currentUser?.signature_image}
+                      onSignatureSaved={() => {
+                        fetchCurrentUser()
+                        setIsSignatureModalOpen(false)
+                        toast.success({
+                          title: "Signature Saved",
+                          description: "Your signature has been saved successfully.",
+                        })
+                      }}
+                    />
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
           ) : (
             <p className="text-muted-foreground">Loading...</p>
           )}

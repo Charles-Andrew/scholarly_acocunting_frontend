@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
+import React, { useState, useEffect, useCallback, useMemo } from "react"
+
 import { createClient } from "@/lib/supabase/client"
 import {
   Table,
@@ -13,10 +14,11 @@ import {
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ArrowLeft, Plus, Loader2, CheckCircle2, Trash2 } from "lucide-react"
+import { ArrowLeft, Loader2, CheckCircle2, Trash2 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import Link from "next/link"
-import type { InvoiceForJournalEntry, JournalEntry } from "@/lib/types/journal-entry"
+import type { InvoiceForJournalEntry } from "@/lib/types/journal-entry"
+import { RemarkModal } from "@/components/journal-entries/remark-modal"
 
 interface InvoiceLineItem {
   id: string
@@ -28,15 +30,19 @@ interface InvoiceWithItems extends InvoiceForJournalEntry {
   items?: InvoiceLineItem[]
   ar_code?: string
   income_category_name?: string
+  totalAmount?: number
 }
 
 export default function GenerateJournalEntriesPage() {
   const supabase = createClient()
   const [loading, setLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
+  const [entryDate, setEntryDate] = useState<string>(new Date().toISOString().split('T')[0]) // Default to today
 
   const [invoices, setInvoices] = useState<InvoiceWithItems[]>([])
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set())
+  const [categoryRemarks, setCategoryRemarks] = useState<Record<string, string>>({})
+  const [categoryReferences, setCategoryReferences] = useState<Record<string, string>>({})
 
   const fetchApprovedInvoices = useCallback(async () => {
     setLoading(true)
@@ -57,9 +63,9 @@ export default function GenerateJournalEntriesPage() {
 
       if (error) throw error
 
-      // Check which invoices already have journal entries
+      // Check which invoices already have journal entries via join table
       const { data: existingEntries } = await supabase
-        .from("journal_entries")
+        .from("account_titles_billing_invoices")
         .select("billing_invoice_id")
         .in(
           "billing_invoice_id",
@@ -122,9 +128,24 @@ export default function GenerateJournalEntriesPage() {
     })
   }
 
+  // Handle saving category remark
+  const handleSaveRemark = (category: string, remark: string) => {
+    setCategoryRemarks((prev) => ({
+      ...prev,
+      [category]: remark,
+    }))
+  }
+
   // Memoize preview entries - grouped by category
   const previewEntries = useMemo(() => {
-    const entries: Omit<JournalEntry, "id">[] = []
+    const entries: {
+      invoice_number: string
+      billing_invoice_id: string | null
+      ar_code: string
+      category_name: string
+      isCreditEntry: boolean
+      amount: number
+    }[] = []
 
     // Group invoices by category
     const categoryGroups: Record<string, typeof invoices> = {}
@@ -151,24 +172,24 @@ export default function GenerateJournalEntriesPage() {
       // Invoice debit entries
       invs.forEach((inv) => {
         entries.push({
-          reference: inv.invoice_number,
+          invoice_number: inv.invoice_number,
           billing_invoice_id: inv.id,
-          debit: inv.totalAmount,
-          credit: 0,
-          remarks: "",
           ar_code: inv.ar_code || "",
+          category_name: category,
+          isCreditEntry: false,
+          amount: inv.totalAmount || 0,
         })
-        categoryTotal += inv.totalAmount
+        categoryTotal += inv.totalAmount || 0
       })
 
       // Category credit entry (category name at bottom)
       entries.push({
-        reference: "",
+        invoice_number: "",
         billing_invoice_id: null,
-        debit: 0,
-        credit: categoryTotal,
-        remarks: "",
         ar_code: category,
+        category_name: category,
+        isCreditEntry: true,
+        amount: categoryTotal,
       })
     })
 
@@ -176,32 +197,33 @@ export default function GenerateJournalEntriesPage() {
   }, [invoices, selectedInvoiceIds])
 
   const handleGenerate = async () => {
-    if (selectedInvoiceIds.size === 0 || previewEntries.length === 0) return
+    console.log("=== HANDLE GENERATE STARTED ===")
+    console.log("Selected invoice IDs:", Array.from(selectedInvoiceIds))
+    console.log("Preview entries count:", previewEntries.length)
+
+    if (selectedInvoiceIds.size === 0 || previewEntries.length === 0) {
+      console.log("Early return - no invoices selected or no preview entries")
+      return
+    }
 
     setGenerating(true)
     try {
       // Step 1: Create journal entry
       const { data: jeData, error: jeError } = await supabase
         .from("journal_entries")
-        .insert({
-          reference: `JE-${new Date().toISOString().slice(0, 10)}`,
-          remarks: "",
-        })
+        .insert({ date: entryDate })
         .select("id")
         .single()
 
       if (jeError) throw jeError
+      console.log("Created journal entry with ID:", jeData?.id)
 
       // Step 2: Link invoices via M2M table (account_titles_billing_invoices)
       const invoiceLinkEntries = selectedInvoiceIds.size > 0
         ? Array.from(selectedInvoiceIds).map((invoiceId) => {
-            const invoice = invoices.find((inv) => inv.id === invoiceId)
-            const totalAmount = invoice?.items?.reduce((sum, item) => sum + item.amount, 0) || 0
             return {
               journal_entry_id: jeData.id,
               billing_invoice_id: invoiceId,
-              debit: totalAmount,
-              credit: 0,
             }
           })
         : []
@@ -212,10 +234,85 @@ export default function GenerateJournalEntriesPage() {
 
       if (linkError) throw linkError
 
+      // Step 3: Save category records for all unique categories
+      // Get unique categories from selected invoices
+      const selectedCategories = new Set<string>()
+      console.log("Selected invoice IDs:", Array.from(selectedInvoiceIds))
+      console.log("Available invoices:", invoices.length)
+      invoices.forEach((invoice) => {
+        if (selectedInvoiceIds.has(invoice.id)) {
+          const category = invoice.income_category_name || "Uncategorized"
+          console.log(`Invoice ${invoice.id} has category: ${category}`)
+          selectedCategories.add(category)
+        }
+      })
+      if (selectedCategories.size > 0) {
+        // Generate records for each category (with or without remarks)
+        const categoryEntries = []
+        console.log("Starting category entry generation for", selectedCategories.size, "categories")
+
+        // Generate base reference and sequential numbers for all categories
+        const baseReference = await generateCategoryReference()
+        console.log("Base reference:", baseReference)
+
+        const match = baseReference.match(/^(GJV \d{4}-\d{2}-)(\d{3})$/)
+        if (!match) {
+          throw new Error(`Invalid base reference format: ${baseReference}`)
+        }
+
+        const prefix = match[1]
+        const startNum = parseInt(match[2], 10)
+
+        let categoryIndex = 0
+        for (const category of selectedCategories) {
+          console.log(`Processing category: ${category}`)
+
+          // Generate sequential reference: base, base+1, base+2, etc.
+          const reference = `${prefix}${String(startNum + categoryIndex).padStart(3, '0')}`
+          console.log(`Generated reference: ${reference}`)
+
+          const remark = categoryRemarks[category] || "" // Get remark if exists, otherwise empty
+          categoryEntries.push({
+            journal_entry_id: jeData.id,
+            category_name: category,
+            remarks: remark.trim() || null, // Store null if empty
+            reference,
+          })
+          categoryIndex++
+        }
+
+        console.log("Inserting category entries:", categoryEntries)
+
+        try {
+          const result = await supabase
+            .from("journal_entry_categories")
+            .insert(categoryEntries)
+            .select()
+
+          console.log("Insert result:", result)
+
+          if (result.error) {
+            console.error("Error saving category records:", result.error)
+            toast.warning({
+              title: "Warning",
+              description: "Journal entry created but failed to save some category records.",
+            })
+          } else {
+            console.log("Category records saved successfully:", result.data)
+          }
+        } catch (insertErr) {
+          console.error("Exception during insert:", insertErr)
+        }
+      } else {
+        console.log("No selected categories found, skipping category creation")
+      }
+
       toast.success({
         title: "Journal Entries Generated",
         description: `Journal entry created with ${selectedInvoiceIds.size} invoice(s) linked.`,
       })
+
+      console.log("=== HANDLE GENERATE COMPLETED SUCCESSFULLY ===")
 
       // Redirect back to journal entries list
       window.location.href = "/journal-entries"
@@ -234,8 +331,84 @@ export default function GenerateJournalEntriesPage() {
     return `₱${value.toFixed(2)}`
   }
 
-  const totalDebit = previewEntries.reduce((sum, entry) => sum + entry.debit, 0)
-  const totalCredit = previewEntries.reduce((sum, entry) => sum + entry.credit, 0)
+  // Generate next category reference
+  // Pattern: GJV YYYY-MM-NNN (auto-increment globally across all categories)
+  const generateCategoryReference = useCallback(async (): Promise<string> => {
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = String(now.getMonth() + 1).padStart(2, '0')
+    const prefix = `GJV ${year}-${month}-`
+
+    // Find the highest sequence number across all categories
+    const { data: existingEntries, error } = await supabase
+      .from("journal_entry_categories")
+      .select("reference")
+      .like("reference", `${prefix}%`)
+      .order("reference", { ascending: false })
+      .limit(1)
+
+    if (error) {
+      console.error("Error fetching existing category references:", error)
+      return `${prefix}001`
+    }
+
+    if (!existingEntries || existingEntries.length === 0) {
+      return `${prefix}001`
+    }
+
+    const lastReference = existingEntries[0].reference
+    const match = lastReference?.match(/-(\d{3})$/)
+
+    if (match) {
+      const lastNum = parseInt(match[1], 10)
+      const nextNum = lastNum + 1
+      return `${prefix}${String(nextNum).padStart(3, '0')}`
+    }
+
+    return `${prefix}001`
+  }, [supabase])
+
+  // Generate preview references for categories
+  useEffect(() => {
+    const generatePreviewReferences = async () => {
+      // Get unique categories from preview entries (credit entries)
+      const categories = previewEntries
+        .filter(entry => entry.isCreditEntry)
+        .map(entry => entry.ar_code)
+        .filter((cat): cat is string => !!cat)
+
+      if (categories.length === 0) {
+        setCategoryReferences({})
+        return
+      }
+
+      // Generate next reference number
+      const nextRef = await generateCategoryReference()
+      const refs: Record<string, string> = {}
+
+      // Parse the base reference
+      const match = nextRef.match(/^(GJV \d{4}-\d{2}-)(\d{3})$/)
+      if (match) {
+        const prefix = match[1]
+        const startNum = parseInt(match[2], 10)
+
+        categories.forEach((category, index) => {
+          refs[category] = `${prefix}${String(startNum + index).padStart(3, '0')}`
+        })
+      }
+
+      setCategoryReferences(refs)
+    }
+
+    generatePreviewReferences()
+  }, [previewEntries, generateCategoryReference])
+
+  const totalDebit = previewEntries
+    .filter(entry => !entry.isCreditEntry)
+    .reduce((sum, entry) => sum + entry.amount, 0)
+  const totalCredit = previewEntries
+    .filter(entry => entry.isCreditEntry)
+    .reduce((sum, entry) => sum + entry.amount, 0)
 
   return (
     <div className="space-y-6 p-6">
@@ -248,12 +421,30 @@ export default function GenerateJournalEntriesPage() {
         <h1 className="text-3xl font-bold">Generate Journal Entries</h1>
       </div>
 
+      {/* Date Field */}
+      <div className="space-y-2">
+        <Label htmlFor="entry-date" className="text-lg">
+          Entry Date <span className="text-red-500">*</span>
+        </Label>
+        <input
+          id="entry-date"
+          type="date"
+          required
+          value={entryDate}
+          onChange={(e) => setEntryDate(e.target.value)}
+          className="flex h-10 w-full max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+        />
+      </div>
+
       {/* Invoice Selection */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <Label className="text-lg">Select Invoices</Label>
           {selectedInvoiceIds.size > 0 && (
-            <Button variant="ghost" size="sm" onClick={() => setSelectedInvoiceIds(new Set())}>
+            <Button variant="ghost" size="sm" onClick={() => {
+              setSelectedInvoiceIds(new Set())
+              setCategoryRemarks({})
+            }}>
               <Trash2 className="mr-2 h-4 w-4" />
               Clear Selection
             </Button>
@@ -316,15 +507,17 @@ export default function GenerateJournalEntriesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Account Titles</TableHead>
+                <TableHead className="border-l">Account Titles</TableHead>
                 <TableHead className="text-right w-32 border-l">Debit</TableHead>
                 <TableHead className="text-right w-32 border-l">Credit</TableHead>
+                <TableHead className="w-48 border-l">Remarks</TableHead>
+                <TableHead className="w-32 border-l">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {previewEntries.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                     Select invoices to preview entries
                   </TableCell>
                 </TableRow>
@@ -333,24 +526,37 @@ export default function GenerateJournalEntriesPage() {
                   {previewEntries.map((entry, index) => (
                     <TableRow
                       key={index}
-                      className={entry.credit > 0 ? "font-semibold" : ""}
+                      className={entry.isCreditEntry ? "font-semibold" : ""}
                     >
-                      <TableCell className="pl-8">
+                      <TableCell className="border-l pl-8">
                         {entry.ar_code || "-"}
                       </TableCell>
                       <TableCell className="text-right border-l">
-                        {entry.credit > 0 ? "" : entry.debit > 0 ? formatCurrency(entry.debit) : ""}
+                        {!entry.isCreditEntry ? formatCurrency(entry.amount) : ""}
                       </TableCell>
                       <TableCell className="text-right border-l">
-                        {entry.credit > 0 ? formatCurrency(entry.credit) : ""}
+                        {entry.isCreditEntry ? formatCurrency(entry.amount) : ""}
+                      </TableCell>
+                      <TableCell className="border-l">
+                        {entry.isCreditEntry && categoryRemarks[entry.ar_code || ""] ? (
+                          <span className="text-xs text-muted-foreground italic">
+                            {categoryRemarks[entry.ar_code || ""]}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="border-l">
+                        {entry.isCreditEntry && (
+                          <RemarkModal
+                            category={entry.ar_code || "Unknown"}
+                            existingRemark={categoryRemarks[entry.ar_code || ""]}
+                            onSave={(remark) => handleSaveRemark(entry.ar_code || "", remark)}
+                          />
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
-                  <TableRow className="font-medium">
-                    <TableCell>Total</TableCell>
-                    <TableCell className="text-right border-l">{formatCurrency(totalDebit)}</TableCell>
-                    <TableCell className="text-right border-l">{formatCurrency(totalCredit)}</TableCell>
-                  </TableRow>
                 </>
               )}
             </TableBody>

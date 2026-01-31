@@ -2,7 +2,6 @@
 
 import { useRef, useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { createClient } from "@/lib/supabase/client"
 
 interface SignaturePadProps {
@@ -250,17 +249,6 @@ export function SignaturePad({
               Delete
             </Button>
           )}
-        </div>
-      )}
-
-      {signature && (
-        <div className="text-sm text-muted-foreground">
-          <p>Preview:</p>
-          <img
-            src={signature}
-            alt="Your signature"
-            className="border rounded-md p-2 mt-1 bg-white max-h-20"
-          />
         </div>
       )}
     </div>

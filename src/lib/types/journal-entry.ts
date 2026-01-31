@@ -3,12 +3,6 @@
  */
 export type JournalEntry = {
   id: string
-  reference: string
-  billing_invoice_id: string | null
-  debit: number
-  credit: number
-  remarks: string | null
-  ar_code: string | null
   created_at: string | null
   updated_at: string | null
 }
@@ -31,4 +25,17 @@ export type InvoiceLineItem = {
   id: string
   description: string
   amount: number
+}
+
+/**
+ * Journal entry category record
+ */
+export type JournalEntryCategory = {
+  id?: string
+  journal_entry_id?: string
+  category_name: string
+  remarks?: string | null
+  reference?: string
+  created_at?: string
+  updated_at?: string
 }
