@@ -75,6 +75,11 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
   const [reference, setReference] = useState<string>("")
   const [recipientId, setRecipientId] = useState<string>("none")
 
+  // Signature users
+  const [preparedById, setPreparedById] = useState<string>("")
+  const [checkedById, setCheckedById] = useState<string>("")
+  const [approvedById, setApprovedById] = useState<string>("")
+
   // Users list for recipient selection
   const [users, setUsers] = useState<User[]>([])
   const [isFetchingUsers, setIsFetchingUsers] = useState(true)
@@ -99,14 +104,22 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
   const fetchUsers = useCallback(async () => {
     setIsFetchingUsers(true)
     try {
-      const { data, error } = await supabase
-        .from("user_profiles")
-        .select("id, email, full_name")
-        .eq("is_active", true)
-        .order("full_name", { ascending: true })
+      const [{ data, error }, { data: { user } }] = await Promise.all([
+        supabase
+          .from("user_profiles")
+          .select("id, email, full_name")
+          .eq("is_active", true)
+          .order("full_name", { ascending: true }),
+        supabase.auth.getUser(),
+      ])
 
       if (error) throw error
       setUsers(data || [])
+
+      // Auto-set prepared_by to current user for new vouchers
+      if (!isEditMode && user) {
+        setPreparedById(user.id)
+      }
     } catch {
       toast({
         title: "Error",
@@ -116,7 +129,7 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
     } finally {
       setIsFetchingUsers(false)
     }
-  }, [supabase])
+  }, [supabase, isEditMode])
 
   // Ref to access current selectedCategoryId without triggering refetch
   const selectedCategoryIdRef = React.useRef(selectedCategoryId)
@@ -188,6 +201,9 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
         setParticulars(voucherData.particulars)
         setReference(voucherData.reference || "")
         setRecipientId(voucherData.recipient_id || "none")
+        setPreparedById(voucherData.prepared_by || "")
+        setCheckedById(voucherData.checked_by || "")
+        setApprovedById(voucherData.approved_by || "")
 
         // Fetch associated journal entry categories
         const { data: junctionData, error: junctionError } = await supabase
@@ -393,6 +409,15 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
       return false
     }
 
+    if (!checkedById || !approvedById) {
+      toast({
+        title: "Validation Error",
+        description: "Please select Checked By and Approved By users.",
+        variant: "error",
+      })
+      return false
+    }
+
     return true
   }
 
@@ -408,6 +433,9 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
         reference: reference.trim() || null,
         amount: amount,
         recipient_id: recipientId === "none" ? null : recipientId,
+        prepared_by: preparedById,
+        checked_by: checkedById,
+        approved_by: approvedById,
       }
 
       let voucherIdToUse = voucherId
@@ -716,13 +744,67 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
         </CardContent>
       </Card>
 
+      {/* Signature Users */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Signatures</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <Label htmlFor="checked-by">
+                Checked By <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={checkedById}
+                onValueChange={setCheckedById}
+                disabled={isFetchingUsers}
+              >
+                <SelectTrigger id="checked-by">
+                  <SelectValue placeholder="Select a user" />
+                </SelectTrigger>
+                <SelectContent>
+                  {users.map((user) => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.full_name || user.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="approved-by">
+                Approved By <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={approvedById}
+                onValueChange={setApprovedById}
+                disabled={isFetchingUsers}
+              >
+                <SelectTrigger id="approved-by">
+                  <SelectValue placeholder="Select a user" />
+                </SelectTrigger>
+                <SelectContent>
+                  {users.map((user) => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.full_name || user.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="flex justify-end gap-4">
         <Button variant="outline" asChild>
           <Link href="/general-voucher">Cancel</Link>
         </Button>
         <Button
           onClick={handleSave}
-          disabled={isSaving || !date || !particulars.trim() || !selectedCategoryId}
+          disabled={isSaving || !date || !particulars.trim() || !selectedCategoryId || !preparedById || !checkedById || !approvedById}
           className="min-w-[120px]"
         >
           {isSaving ? (

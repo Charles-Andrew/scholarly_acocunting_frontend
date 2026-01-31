@@ -57,11 +57,12 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
   const [approvedById, setApprovedById] = useState<string>("")
 
   const fetchData = useCallback(async () => {
-    const [clientsData, categoriesData, bankData, usersData] = await Promise.all([
+    const [clientsData, categoriesData, bankData, usersData, currentUserData] = await Promise.all([
       supabase.from("clients").select("id, name, accounts_receivable_code, created_at, updated_at").order("name"),
       supabase.from("income_categories").select("id, name, slug, created_at, updated_at").order("name"),
       supabase.from("bank_accounts").select("id, name, bank_name, account_number, created_at, updated_at"),
       supabase.from("user_profiles").select("id, email, full_name"),
+      supabase.auth.getUser(),
     ])
 
     if (clientsData.data) setClients(clientsData.data)
@@ -75,7 +76,12 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
       }))
       setUsers(formattedUsers)
     }
-  }, [supabase])
+
+    // Auto-set prepared_by to current user for new invoices
+    if (!isEditMode && currentUserData.data?.user) {
+      setPreparedById(currentUserData.data.user.id)
+    }
+  }, [supabase, isEditMode])
 
   const fetchInvoiceData = useCallback(async () => {
     if (!invoiceId) return
@@ -541,44 +547,23 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
           <CardTitle>Signatures</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="prepared-by">Prepared By</Label>
-              <Select
-                value={preparedById}
-                onValueChange={setPreparedById}
-              >
-                <SelectTrigger id="prepared-by">
-                  <SelectValue placeholder="Select a user" />
-                </SelectTrigger>
-                <SelectContent>
-                  {users.map((user) => (
-                    <SelectItem key={user.id} value={user.id}>
-                      {user.full_name || user.email}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="approved-by">Approved By</Label>
-              <Select
-                value={approvedById}
-                onValueChange={setApprovedById}
-              >
-                <SelectTrigger id="approved-by">
-                  <SelectValue placeholder="Select a user" />
-                </SelectTrigger>
-                <SelectContent>
-                  {users.map((user) => (
-                    <SelectItem key={user.id} value={user.id}>
-                      {user.full_name || user.email}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="grid gap-2 max-w-md">
+            <Label htmlFor="approved-by">Approved By <span className="text-red-500">*</span></Label>
+            <Select
+              value={approvedById}
+              onValueChange={setApprovedById}
+            >
+              <SelectTrigger id="approved-by">
+                <SelectValue placeholder="Select a user" />
+              </SelectTrigger>
+              <SelectContent>
+                {users.map((user) => (
+                  <SelectItem key={user.id} value={user.id}>
+                    {user.full_name || user.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>

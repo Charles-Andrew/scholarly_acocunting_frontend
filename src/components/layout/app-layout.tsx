@@ -247,7 +247,7 @@ export function AppLayout({
               </Button>
             </DropdownMenuTrigger>
             {mounted && (
-              <DropdownMenuContent side="right" align="start" sideOffset={4} className="w-56">
+              <DropdownMenuContent side="top" align="start" sideOffset={4} className="w-full min-w-[var(--radix-popper-anchor-width)]">
                 <DropdownMenuLabel className="font-normal">
                   <div className="flex flex-col space-y-1">
                     <p className="text-sm font-medium leading-none">{getFirstName()}</p>
@@ -256,13 +256,6 @@ export function AppLayout({
                     </p>
                   </div>
                 </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <a href="/settings" className="cursor-pointer">
-                    <Settings className="mr-2 h-4 w-4" />
-                    Settings
-                  </a>
-                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
                   <button

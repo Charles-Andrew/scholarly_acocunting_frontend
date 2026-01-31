@@ -3,7 +3,7 @@
 import * as React from "react"
 import Image from "next/image"
 import { createClient } from "@/lib/supabase/client"
-import { ArrowLeft, Printer } from "lucide-react"
+import { ArrowLeft, Printer, Signature, X } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { toast } from "@/hooks/use-toast"
@@ -28,10 +28,25 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
   const [voucher, setVoucher] = React.useState<VoucherDetail | null>(null)
   const [isLoading, setIsLoading] = React.useState(true)
   const [users, setUsers] = React.useState<BillingInvoiceUser[]>([])
-  const [preparedBySignature, setPreparedBySignature] = React.useState<string | null>(null)
+  const [currentUserId, setCurrentUserId] = React.useState<string | null>(null)
+  const [preparedBySignature, setPreparedBySignature] = React.useState<{ signature_image: string; signed_at: string } | null>(null)
+  const [checkedBySignature, setCheckedBySignature] = React.useState<{ signature_image: string; signed_at: string } | null>(null)
+  const [approvedBySignature, setApprovedBySignature] = React.useState<{ signature_image: string; signed_at: string } | null>(null)
+  const [isTogglingSignature, setIsTogglingSignature] = React.useState(false)
 
   const fetchVoucherData = React.useCallback(async () => {
     try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setCurrentUserId(user.id)
+      }
+
+      // Reset signatures
+      setPreparedBySignature(null)
+      setCheckedBySignature(null)
+      setApprovedBySignature(null)
+
       // Fetch voucher
       const { data: voucherData, error: voucherError } = await supabase
         .from("general_vouchers")
@@ -124,7 +139,7 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
         })
       }
 
-      // Fetch users for prepared_by signature
+      // Fetch users for signatures
       const { data: usersData } = await supabase
         .from("user_profiles")
         .select("id, email, full_name, position")
@@ -138,14 +153,31 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
         }))
         setUsers(formattedUsers)
 
-        // Fetch signature for created_by
-        if (voucherData.created_by) {
-          const { data: preparedSig } = await supabase
-            .from("user_profiles")
-            .select("signature_image")
-            .eq("id", voucherData.created_by)
-            .single()
-          setPreparedBySignature(preparedSig?.signature_image || null)
+        // Fetch signatures from general_voucher_signatures table
+        const { data: signatures } = await supabase
+          .from("general_voucher_signatures")
+          .select("signature_type, signature_image, signed_at")
+          .eq("general_voucher_id", resolvedParams.id)
+
+        if (signatures) {
+          signatures.forEach((sig) => {
+            if (sig.signature_type === "prepared_by") {
+              setPreparedBySignature({
+                signature_image: sig.signature_image,
+                signed_at: sig.signed_at,
+              })
+            } else if (sig.signature_type === "checked_by") {
+              setCheckedBySignature({
+                signature_image: sig.signature_image,
+                signed_at: sig.signed_at,
+              })
+            } else if (sig.signature_type === "approved_by") {
+              setApprovedBySignature({
+                signature_image: sig.signature_image,
+                signed_at: sig.signed_at,
+              })
+            }
+          })
         }
       }
 
@@ -184,6 +216,93 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
 
   const handlePrint = () => {
     window.print()
+  }
+
+  const handleToggleSignature = async (signatureType: "prepared_by" | "checked_by" | "approved_by") => {
+    const hasSignature =
+      signatureType === "prepared_by" ? preparedBySignature :
+      signatureType === "checked_by" ? checkedBySignature :
+      approvedBySignature
+
+    setIsTogglingSignature(true)
+    try {
+      if (hasSignature) {
+        // Remove signature
+        const response = await fetch(`/api/general-vouchers/${resolvedParams.id}/signature`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ signatureType }),
+        })
+
+        if (!response.ok) {
+          const data = await response.json()
+          throw new Error(data.error || "Failed to remove signature")
+        }
+
+        if (signatureType === "prepared_by") {
+          setPreparedBySignature(null)
+        } else if (signatureType === "checked_by") {
+          setCheckedBySignature(null)
+        } else {
+          setApprovedBySignature(null)
+        }
+
+        toast({
+          title: "Signature Removed",
+          description: "Your signature has been removed from this voucher.",
+        })
+      } else {
+        // Add signature
+        const response = await fetch(`/api/general-vouchers/${resolvedParams.id}/signature`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ signatureType }),
+        })
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to add signature")
+        }
+
+        // Get current user's signature image
+        const userProfile = await supabase
+          .from("user_profiles")
+          .select("signature_image")
+          .eq("id", currentUserId)
+          .single()
+
+        const signatureImage = userProfile.data?.signature_image
+
+        if (signatureImage) {
+          const newSignature = {
+            signature_image: signatureImage,
+            signed_at: new Date().toISOString(),
+          }
+
+          if (signatureType === "prepared_by") {
+            setPreparedBySignature(newSignature)
+          } else if (signatureType === "checked_by") {
+            setCheckedBySignature(newSignature)
+          } else {
+            setApprovedBySignature(newSignature)
+          }
+        }
+
+        toast({
+          title: "Signature Added",
+          description: "Your signature has been added to this voucher.",
+        })
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to toggle signature.",
+        variant: "error",
+      })
+    } finally {
+      setIsTogglingSignature(false)
+    }
   }
 
   // Calculate preview entries for journal display
@@ -228,7 +347,9 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
     return { debit, credit }
   }, [previewEntries])
 
-  const preparedBy = users.find((u) => u.id === voucher?.created_by)
+  const preparedBy = users.find((u) => u.id === voucher?.prepared_by)
+  const checkedBy = users.find((u) => u.id === voucher?.checked_by)
+  const approvedBy = users.find((u) => u.id === voucher?.approved_by)
 
   if (isLoading) {
     return (
@@ -383,16 +504,17 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
           </div>
         )}
 
-        {/* Section 6: Prepared By and Received By */}
+        {/* Section 6: Prepared By, Checked By, and Approved By */}
         <div className="px-8 py-6">
-          <div className="grid grid-cols-2 gap-8">
-            <div className="relative">
+          <div className="grid grid-cols-3 gap-8">
+            {/* Prepared By */}
+            <div className="relative group">
               <p className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-2">Prepared by:</p>
               <div className="relative inline-block min-w-[200px]">
                 <div className="relative h-16 -mb-8">
                   {preparedBySignature && (
                     <Image
-                      src={preparedBySignature}
+                      src={preparedBySignature.signature_image}
                       alt="Signature"
                       fill
                       className="object-contain z-10"
@@ -408,15 +530,36 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
                     <p className="text-xs text-gray-600 pt-1">{preparedBy.position}</p>
                   )}
                 </div>
+                {/* Hover button for current user */}
+                {currentUserId && currentUserId === voucher?.prepared_by && (
+                  <button
+                    onClick={() => handleToggleSignature("prepared_by")}
+                    disabled={isTogglingSignature}
+                    className={`absolute -top-2 -right-2 p-1.5 rounded-full shadow-md transition-all duration-200 print:hidden opacity-0 group-hover:opacity-100 z-50 ${
+                      preparedBySignature
+                        ? "bg-red-100 text-red-600 hover:bg-red-200"
+                        : "bg-green-100 text-green-600 hover:bg-green-200"
+                    }`}
+                    title={preparedBySignature ? "Remove signature" : "Add signature"}
+                  >
+                    {preparedBySignature ? (
+                      <X className="h-4 w-4" />
+                    ) : (
+                      <Signature className="h-4 w-4" />
+                    )}
+                  </button>
+                )}
               </div>
             </div>
-            <div className="relative">
-              <p className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-2">Received by:</p>
+
+            {/* Checked By */}
+            <div className="relative group">
+              <p className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-2">Checked by:</p>
               <div className="relative inline-block min-w-[200px]">
                 <div className="relative h-16 -mb-8">
-                  {voucher.recipient?.signature_image && (
+                  {checkedBySignature && (
                     <Image
-                      src={voucher.recipient.signature_image}
+                      src={checkedBySignature.signature_image}
                       alt="Signature"
                       fill
                       className="object-contain z-10"
@@ -426,12 +569,76 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
                 </div>
                 <div>
                   <p className="text-sm text-gray-900 font-medium border-b border-gray-900 pb-1">
-                    {voucher.recipient?.full_name || voucher.recipient?.email || "-"}
+                    {checkedBy?.full_name || checkedBy?.email || "-"}
                   </p>
-                  {voucher.recipient?.position && (
-                    <p className="text-xs text-gray-600 pt-1">{voucher.recipient.position}</p>
+                  {checkedBy?.position && (
+                    <p className="text-xs text-gray-600 pt-1">{checkedBy.position}</p>
                   )}
                 </div>
+                {/* Hover button for current user */}
+                {currentUserId && currentUserId === voucher?.checked_by && (
+                  <button
+                    onClick={() => handleToggleSignature("checked_by")}
+                    disabled={isTogglingSignature}
+                    className={`absolute -top-2 -right-2 p-1.5 rounded-full shadow-md transition-all duration-200 print:hidden opacity-0 group-hover:opacity-100 z-50 ${
+                      checkedBySignature
+                        ? "bg-red-100 text-red-600 hover:bg-red-200"
+                        : "bg-green-100 text-green-600 hover:bg-green-200"
+                    }`}
+                    title={checkedBySignature ? "Remove signature" : "Add signature"}
+                  >
+                    {checkedBySignature ? (
+                      <X className="h-4 w-4" />
+                    ) : (
+                      <Signature className="h-4 w-4" />
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Approved By */}
+            <div className="relative group">
+              <p className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-2">Approved by:</p>
+              <div className="relative inline-block min-w-[200px]">
+                <div className="relative h-16 -mb-8">
+                  {approvedBySignature && (
+                    <Image
+                      src={approvedBySignature.signature_image}
+                      alt="Signature"
+                      fill
+                      className="object-contain z-10"
+                      unoptimized
+                    />
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm text-gray-900 font-medium border-b border-gray-900 pb-1">
+                    {approvedBy?.full_name || approvedBy?.email || "-"}
+                  </p>
+                  {approvedBy?.position && (
+                    <p className="text-xs text-gray-600 pt-1">{approvedBy.position}</p>
+                  )}
+                </div>
+                {/* Hover button for current user */}
+                {currentUserId && currentUserId === voucher?.approved_by && (
+                  <button
+                    onClick={() => handleToggleSignature("approved_by")}
+                    disabled={isTogglingSignature}
+                    className={`absolute -top-2 -right-2 p-1.5 rounded-full shadow-md transition-all duration-200 print:hidden opacity-0 group-hover:opacity-100 z-50 ${
+                      approvedBySignature
+                        ? "bg-red-100 text-red-600 hover:bg-red-200"
+                        : "bg-green-100 text-green-600 hover:bg-green-200"
+                    }`}
+                    title={approvedBySignature ? "Remove signature" : "Add signature"}
+                  >
+                    {approvedBySignature ? (
+                      <X className="h-4 w-4" />
+                    ) : (
+                      <Signature className="h-4 w-4" />
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           </div>

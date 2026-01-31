@@ -14,11 +14,24 @@ import {
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { ArrowLeft, Loader2, CheckCircle2, Trash2 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import Link from "next/link"
 import type { InvoiceForJournalEntry } from "@/lib/types/journal-entry"
 import { RemarkModal } from "@/components/journal-entries/remark-modal"
+
+interface User {
+  id: string
+  email: string
+  full_name: string | null
+}
 
 interface InvoiceLineItem {
   id: string
@@ -42,6 +55,10 @@ export default function GenerateJournalEntriesPage() {
   const [invoices, setInvoices] = useState<InvoiceWithItems[]>([])
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set())
   const [categoryRemarks, setCategoryRemarks] = useState<Record<string, string>>({})
+
+  const [users, setUsers] = useState<User[]>([])
+  const [preparedById, setPreparedById] = useState<string>("")
+  const [approvedById, setApprovedById] = useState<string>("")
 
   const fetchApprovedInvoices = useCallback(async () => {
     setLoading(true)
@@ -101,9 +118,35 @@ export default function GenerateJournalEntriesPage() {
     }
   }, [supabase])
 
+  const fetchUsers = useCallback(async () => {
+    try {
+      const [{ data: usersData }, { data: { user } }] = await Promise.all([
+        supabase.from("user_profiles").select("id, email, full_name"),
+        supabase.auth.getUser(),
+      ])
+
+      if (usersData) {
+        const formattedUsers = usersData.map((u) => ({
+          id: u.id,
+          email: u.email,
+          full_name: u.full_name || u.email?.split("@")[0] || u.email,
+        }))
+        setUsers(formattedUsers)
+      }
+
+      // Auto-set prepared_by to current user
+      if (user) {
+        setPreparedById(user.id)
+      }
+    } catch {
+      // Silently fail - users dropdown will be empty
+    }
+  }, [supabase])
+
   useEffect(() => {
     fetchApprovedInvoices()
-  }, [fetchApprovedInvoices])
+    fetchUsers()
+  }, [fetchApprovedInvoices, fetchUsers])
 
   const toggleInvoice = (invoiceId: string) => {
     setSelectedInvoiceIds((prev) => {
@@ -133,6 +176,38 @@ export default function GenerateJournalEntriesPage() {
       [category]: remark,
     }))
   }
+
+  // Generate next entry number
+  // Pattern: JE-YYYY-MM-XXX (auto-increment)
+  const generateEntryNumber = useCallback(async (): Promise<string> => {
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = String(now.getMonth() + 1).padStart(2, '0')
+    const prefix = `JE-${year}-${month}-`
+
+    // Find the highest sequence number for this month
+    const { data: existingEntries, error } = await supabase
+      .from("journal_entries")
+      .select("entry_number")
+      .like("entry_number", `${prefix}%`)
+      .order("entry_number", { ascending: false })
+      .limit(1)
+
+    if (error || !existingEntries || existingEntries.length === 0) {
+      return `${prefix}001`
+    }
+
+    const lastEntryNumber = existingEntries[0].entry_number
+    const match = lastEntryNumber?.match(/-(\d{3})$/)
+
+    if (match) {
+      const lastNum = parseInt(match[1], 10)
+      const nextNum = lastNum + 1
+      return `${prefix}${String(nextNum).padStart(3, '0')}`
+    }
+
+    return `${prefix}001`
+  }, [supabase])
 
   // Memoize preview entries - grouped by category
   const previewEntries = useMemo(() => {
@@ -195,16 +270,25 @@ export default function GenerateJournalEntriesPage() {
   }, [invoices, selectedInvoiceIds])
 
   const handleGenerate = async () => {
-    if (selectedInvoiceIds.size === 0 || previewEntries.length === 0) {
+    if (selectedInvoiceIds.size === 0 || previewEntries.length === 0 || !preparedById || !approvedById) {
       return
     }
 
     setGenerating(true)
     try {
+      // Generate entry number
+      const entryNumber = await generateEntryNumber()
+
       // Step 1: Create journal entry
       const { data: jeData, error: jeError } = await supabase
         .from("journal_entries")
-        .insert({ date: entryDate })
+        .insert({
+          date: entryDate,
+          entry_number: entryNumber,
+          prepared_by: preparedById,
+          approved_by: approvedById,
+          status: "approved",
+        })
         .select("id")
         .single()
 
@@ -355,6 +439,42 @@ export default function GenerateJournalEntriesPage() {
     .filter(entry => entry.isCreditEntry)
     .reduce((sum, entry) => sum + entry.amount, 0)
 
+  // Calculate row spans for remarks column - each category group spans its rows
+  const getRemarksRowSpan = () => {
+    const spans: number[] = []
+    let currentCategory = ""
+    let categoryStartIndex = 0
+    let categoryRowCount = 0
+
+    previewEntries.forEach((entry, index) => {
+      if (entry.category_name !== currentCategory) {
+        // New category - fill in span for previous category
+        if (currentCategory !== "" && categoryRowCount > 0) {
+          for (let i = 0; i < categoryRowCount; i++) {
+            spans[categoryStartIndex + i] = i === 0 ? categoryRowCount : 0
+          }
+        }
+        // Start new category
+        currentCategory = entry.category_name
+        categoryStartIndex = index
+        categoryRowCount = 1
+      } else {
+        categoryRowCount++
+      }
+    })
+
+    // Fill in last category
+    if (currentCategory !== "" && categoryRowCount > 0) {
+      for (let i = 0; i < categoryRowCount; i++) {
+        spans[categoryStartIndex + i] = i === 0 ? categoryRowCount : 0
+      }
+    }
+
+    return spans
+  }
+
+  const remarksRowSpans = getRemarksRowSpan()
+
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center gap-4">
@@ -468,40 +588,45 @@ export default function GenerateJournalEntriesPage() {
                 </TableRow>
               ) : (
                 <>
-                  {previewEntries.map((entry, index) => (
-                    <TableRow
-                      key={index}
-                      className={entry.isCreditEntry ? "font-semibold" : ""}
-                    >
-                      <TableCell className="border-l pl-8">
-                        {entry.ar_code || "-"}
-                      </TableCell>
-                      <TableCell className="text-right border-l">
-                        {!entry.isCreditEntry ? formatCurrency(entry.amount) : ""}
-                      </TableCell>
-                      <TableCell className="text-right border-l">
-                        {entry.isCreditEntry ? formatCurrency(entry.amount) : ""}
-                      </TableCell>
-                      <TableCell className="border-l">
-                        {entry.isCreditEntry && categoryRemarks[entry.ar_code || ""] ? (
-                          <span className="text-xs text-muted-foreground italic">
-                            {categoryRemarks[entry.ar_code || ""]}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
+                  {previewEntries.map((entry, index) => {
+                    const rowSpan = remarksRowSpans[index]
+                    return (
+                      <TableRow
+                        key={index}
+                        className={entry.isCreditEntry ? "font-semibold" : ""}
+                      >
+                        <TableCell className="border-l pl-8">
+                          {entry.ar_code || "-"}
+                        </TableCell>
+                        <TableCell className="text-right border-l">
+                          {!entry.isCreditEntry ? formatCurrency(entry.amount) : ""}
+                        </TableCell>
+                        <TableCell className="text-right border-l">
+                          {entry.isCreditEntry ? formatCurrency(entry.amount) : ""}
+                        </TableCell>
+                        {rowSpan > 0 && (
+                          <TableCell className="border-l align-middle text-center" rowSpan={rowSpan}>
+                            {categoryRemarks[entry.category_name] ? (
+                              <span className="text-xs text-muted-foreground italic">
+                                {categoryRemarks[entry.category_name]}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
                         )}
-                      </TableCell>
-                      <TableCell className="border-l">
-                        {entry.isCreditEntry && (
-                          <RemarkModal
-                            category={entry.ar_code || "Unknown"}
-                            existingRemark={categoryRemarks[entry.ar_code || ""]}
-                            onSave={(remark) => handleSaveRemark(entry.ar_code || "", remark)}
-                          />
+                        {rowSpan > 0 && (
+                          <TableCell className="border-l align-middle text-center" rowSpan={rowSpan}>
+                            <RemarkModal
+                              category={entry.category_name}
+                              existingRemark={categoryRemarks[entry.category_name]}
+                              onSave={(remark) => handleSaveRemark(entry.category_name, remark)}
+                            />
+                          </TableCell>
                         )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                      </TableRow>
+                    )
+                  })}
                 </>
               )}
             </TableBody>
@@ -514,6 +639,25 @@ export default function GenerateJournalEntriesPage() {
         )}
       </div>
 
+      {/* Approved By */}
+      <div className="space-y-2 max-w-md">
+        <Label htmlFor="approved-by" className="text-lg">
+          Approved By <span className="text-red-500">*</span>
+        </Label>
+        <Select value={approvedById} onValueChange={setApprovedById}>
+          <SelectTrigger id="approved-by" className="w-full">
+            <SelectValue placeholder="Select a user" />
+          </SelectTrigger>
+          <SelectContent>
+            {users.map((user) => (
+              <SelectItem key={user.id} value={user.id}>
+                {user.full_name || user.email}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       {/* Actions */}
       <div className="flex justify-end gap-4 pt-4 border-t">
         <Button variant="outline" asChild disabled={generating}>
@@ -521,7 +665,7 @@ export default function GenerateJournalEntriesPage() {
         </Button>
         <Button
           onClick={handleGenerate}
-          disabled={selectedInvoiceIds.size === 0 || previewEntries.length === 0 || generating}
+          disabled={selectedInvoiceIds.size === 0 || previewEntries.length === 0 || !preparedById || !approvedById || generating}
         >
           {generating ? (
             <>

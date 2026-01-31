@@ -72,7 +72,14 @@ export default function JournalEntriesPage() {
   }, [fetchEntries])
 
   const columns: ColumnDef<Record<string, unknown>>[] = [
-    { accessorKey: "id", header: "ID" },
+    {
+      accessorKey: "entry_number",
+      header: "Entry #",
+      cell: ({ row }) => {
+        const entryNumber = row.getValue("entry_number") as string | null
+        return entryNumber || "-"
+      }
+    },
     {
       accessorKey: "date",
       header: "Date",

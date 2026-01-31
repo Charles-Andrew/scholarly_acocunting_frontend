@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from "react"
 import Image from "next/image"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, Printer, Loader2 } from "lucide-react"
+import { ArrowLeft, Printer, Loader2, Signature, X } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import Link from "next/link"
 import { useParams } from "next/navigation"
@@ -16,7 +16,8 @@ interface JournalEntryDetail {
   updated_at: string
   date: string
   entry_number: string | null
-  created_by: string | null
+  prepared_by: string | null
+  approved_by: string | null
 }
 
 interface LinkedInvoice {
@@ -48,13 +49,22 @@ export default function JournalEntryDetailPage() {
   const [invoices, setInvoices] = useState<LinkedInvoice[]>([])
   const [categoryRecords, setCategoryRecords] = useState<{ category_name: string; remarks: string | null; reference: string }[]>([])
   const [users, setUsers] = useState<BillingInvoiceUser[]>([])
-  const [preparedBySignature, setPreparedBySignature] = useState<string | null>(null)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [preparedBySignature, setPreparedBySignature] = useState<{ signature_image: string; signed_at: string } | null>(null)
+  const [approvedBySignature, setApprovedBySignature] = useState<{ signature_image: string; signed_at: string } | null>(null)
+  const [isTogglingSignature, setIsTogglingSignature] = useState(false)
 
   const fetchJournalEntry = useCallback(async () => {
     if (!params.id) return
 
     setLoading(true)
     try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setCurrentUserId(user.id)
+      }
+
       // Fetch journal entry header
       const { data: entryData, error: entryError } = await supabase
         .from("journal_entries")
@@ -124,7 +134,7 @@ export default function JournalEntryDetailPage() {
       setCategoryRecords(remarksData || [])
       setInvoices(formattedInvoices)
 
-      // Fetch users for prepared_by
+      // Fetch users for prepared_by and approved_by
       const { data: usersData } = await supabase
         .from("user_profiles")
         .select("id, email, full_name, position")
@@ -138,14 +148,26 @@ export default function JournalEntryDetailPage() {
         }))
         setUsers(formattedUsers)
 
-        // Fetch signature for created_by
-        if (entryData.created_by) {
-          const { data: preparedSig } = await supabase
-            .from("user_profiles")
-            .select("signature_image")
-            .eq("id", entryData.created_by)
-            .single()
-          setPreparedBySignature(preparedSig?.signature_image || null)
+        // Fetch signatures from journal_entry_signatures table
+        const { data: signatures } = await supabase
+          .from("journal_entry_signatures")
+          .select("signature_type, signature_image, signed_at")
+          .eq("journal_entry_id", params.id)
+
+        if (signatures) {
+          signatures.forEach((sig) => {
+            if (sig.signature_type === "prepared_by") {
+              setPreparedBySignature({
+                signature_image: sig.signature_image,
+                signed_at: sig.signed_at,
+              })
+            } else if (sig.signature_type === "approved_by") {
+              setApprovedBySignature({
+                signature_image: sig.signature_image,
+                signed_at: sig.signed_at,
+              })
+            }
+          })
         }
       }
     } catch {
@@ -176,6 +198,85 @@ export default function JournalEntryDetailPage() {
 
   const handlePrint = () => {
     window.print()
+  }
+
+  const handleToggleSignature = async (signatureType: "prepared_by" | "approved_by") => {
+    const hasSignature = signatureType === "prepared_by" ? preparedBySignature : approvedBySignature
+
+    setIsTogglingSignature(true)
+    try {
+      if (hasSignature) {
+        // Remove signature
+        const response = await fetch(`/api/journal-entries/${params.id}/signature`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ signatureType }),
+        })
+
+        if (!response.ok) {
+          const data = await response.json()
+          throw new Error(data.error || "Failed to remove signature")
+        }
+
+        if (signatureType === "prepared_by") {
+          setPreparedBySignature(null)
+        } else {
+          setApprovedBySignature(null)
+        }
+
+        toast.success({
+          title: "Signature Removed",
+          description: "Your signature has been removed from this journal entry.",
+        })
+      } else {
+        // Add signature
+        const response = await fetch(`/api/journal-entries/${params.id}/signature`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ signatureType }),
+        })
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to add signature")
+        }
+
+        // Get current user's signature image
+        const userProfile = await supabase
+          .from("user_profiles")
+          .select("signature_image")
+          .eq("id", currentUserId)
+          .single()
+
+        const signatureImage = userProfile.data?.signature_image
+
+        if (signatureImage) {
+          const newSignature = {
+            signature_image: signatureImage,
+            signed_at: new Date().toISOString(),
+          }
+
+          if (signatureType === "prepared_by") {
+            setPreparedBySignature(newSignature)
+          } else {
+            setApprovedBySignature(newSignature)
+          }
+        }
+
+        toast.success({
+          title: "Signature Added",
+          description: "Your signature has been added to this journal entry.",
+        })
+      }
+    } catch (error) {
+      toast.error({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to toggle signature.",
+      })
+    } finally {
+      setIsTogglingSignature(false)
+    }
   }
 
   // Build preview entries - grouped by category like the generate page
@@ -262,7 +363,8 @@ export default function JournalEntryDetailPage() {
   const totalDebit = previewEntries.reduce((sum, entry) => sum + (entry.isCreditEntry ? 0 : entry.amount), 0)
   const totalCredit = previewEntries.reduce((sum, entry) => sum + (entry.isCreditEntry ? entry.amount : 0), 0)
 
-  const preparedBy = users.find((u) => u.id === entry?.created_by)
+  const preparedBy = users.find((u) => u.id === entry?.prepared_by)
+  const approvedBy = users.find((u) => u.id === entry?.approved_by)
 
   if (loading) {
     return (
@@ -299,10 +401,12 @@ export default function JournalEntryDetailPage() {
           </Button>
           <h1 className="text-3xl font-bold">Journal Entry</h1>
         </div>
-        <Button variant="outline" onClick={handlePrint}>
-          <Printer className="mr-2 h-4 w-4" />
-          Print
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handlePrint}>
+            <Printer className="mr-2 h-4 w-4" />
+            Print
+          </Button>
+        </div>
       </div>
 
       {/* Journal Entry Document */}
@@ -406,28 +510,100 @@ export default function JournalEntryDetailPage() {
           </div>
         )}
 
-        {/* Section 5: Prepared By */}
+        {/* Section 5: Prepared By and Approved By */}
         <div className="px-8 py-6">
-          <div className="relative inline-block min-w-[200px]">
-            <p className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-2">Prepared by:</p>
-            <div className="relative h-16 -mb-8">
-              {preparedBySignature && (
-                <Image
-                  src={preparedBySignature}
-                  alt="Signature"
-                  fill
-                  className="object-contain z-10"
-                  unoptimized
-                />
-              )}
+          <div className="grid grid-cols-2 gap-8">
+            <div className="relative group">
+              <p className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-2">Prepared by:</p>
+              <div className="relative inline-block min-w-[200px]">
+                <div className="relative h-16 -mb-8">
+                  {preparedBySignature ? (
+                    <Image
+                      key={`prepared-${preparedBySignature.signed_at}`}
+                      src={preparedBySignature.signature_image}
+                      alt="Signature"
+                      fill
+                      className="object-contain z-10"
+                      unoptimized
+                      priority
+                    />
+                  ) : null}
+                </div>
+                <div>
+                  <p className="text-sm text-gray-900 font-medium border-b border-gray-900 pb-1">
+                    {preparedBy?.full_name || preparedBy?.email || "-"}
+                  </p>
+                  {preparedBy?.position && (
+                    <p className="text-xs text-gray-600 pt-1">{preparedBy.position}</p>
+                  )}
+                </div>
+                {/* Hover button for current user */}
+                {currentUserId &&
+                  currentUserId === entry?.prepared_by && (
+                  <button
+                    onClick={() => handleToggleSignature("prepared_by")}
+                    disabled={isTogglingSignature}
+                    className={`absolute -top-2 -right-2 p-1.5 rounded-full shadow-md transition-all duration-200 print:hidden opacity-0 group-hover:opacity-100 z-50 ${
+                      preparedBySignature
+                        ? "bg-red-100 text-red-600 hover:bg-red-200"
+                        : "bg-green-100 text-green-600 hover:bg-green-200"
+                    }`}
+                    title={preparedBySignature ? "Remove signature" : "Add signature"}
+                  >
+                    {preparedBySignature ? (
+                      <X className="h-4 w-4" />
+                    ) : (
+                      <Signature className="h-4 w-4" />
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
-            <div>
-              <p className="text-sm text-gray-900 font-medium border-b border-gray-900 pb-1">
-                {preparedBy?.full_name || preparedBy?.email || "-"}
-              </p>
-              {preparedBy?.position && (
-                <p className="text-xs text-gray-600 pt-1">{preparedBy.position}</p>
-              )}
+            <div className="relative group">
+              <p className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-2">Approved by:</p>
+              <div className="relative inline-block min-w-[200px]">
+                <div className="relative h-16 -mb-8">
+                  {approvedBySignature ? (
+                    <Image
+                      key={`approved-${approvedBySignature.signed_at}`}
+                      src={approvedBySignature.signature_image}
+                      alt="Signature"
+                      fill
+                      className="object-contain z-10"
+                      unoptimized
+                      priority
+                    />
+                  ) : null}
+                </div>
+                <div>
+                  <p className="text-sm text-gray-900 font-medium border-b border-gray-900 pb-1">
+                    {approvedBy?.full_name || approvedBy?.email || "-"}
+                  </p>
+                  {approvedBy?.position && (
+                    <p className="text-xs text-gray-600 pt-1">{approvedBy.position}</p>
+                  )}
+                </div>
+                {/* Hover button for current user */}
+                {currentUserId &&
+                  currentUserId === entry?.approved_by && (
+                  <button
+                    onClick={() => handleToggleSignature("approved_by")}
+                    disabled={isTogglingSignature}
+                    className={`absolute -top-2 -right-2 p-1.5 rounded-full shadow-md transition-all duration-200 print:hidden opacity-0 group-hover:opacity-100 z-50 ${
+                      approvedBySignature
+                        ? "bg-red-100 text-red-600 hover:bg-red-200"
+                        : "bg-green-100 text-green-600 hover:bg-green-200"
+                    }`}
+                    title={approvedBySignature ? "Remove signature" : "Add signature"}
+                  >
+                    {approvedBySignature ? (
+                      <X className="h-4 w-4" />
+                    ) : (
+                      <Signature className="h-4 w-4" />
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

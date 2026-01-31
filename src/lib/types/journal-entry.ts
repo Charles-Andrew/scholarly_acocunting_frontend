@@ -5,6 +5,16 @@ export type JournalEntry = {
   id: string
   created_at: string | null
   updated_at: string | null
+  date: string | null
+  entry_number: string | null
+  prepared_by: string | null
+  approved_by: string | null
+  status: "draft" | "for_approval" | "approved"
+  // Joined data
+  prepared_by_signature?: { signature_image: string; signed_at: string } | null
+  approved_by_signature?: { signature_image: string; signed_at: string } | null
+  prepared_by_name?: string
+  approved_by_name?: string
 }
 
 /**

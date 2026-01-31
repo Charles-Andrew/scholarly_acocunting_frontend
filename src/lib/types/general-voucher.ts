@@ -12,6 +12,16 @@ export type GeneralVoucher = {
   created_by: string | null
   recipient_id: string | null
   gv_id: string | null
+  prepared_by: string | null
+  checked_by: string | null
+  approved_by: string | null
+  // Joined data
+  prepared_by_signature?: { signature_image: string; signed_at: string } | null
+  checked_by_signature?: { signature_image: string; signed_at: string } | null
+  approved_by_signature?: { signature_image: string; signed_at: string } | null
+  prepared_by_name?: string
+  checked_by_name?: string
+  approved_by_name?: string
 }
 
 /**
