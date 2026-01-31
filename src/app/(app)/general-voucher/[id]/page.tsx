@@ -87,55 +87,45 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
         if (categoryError) throw categoryError
         category = categoryData
 
-        // Fetch linked invoices through journal_entry_id
-        const { data: jeData, error: jeError } = await supabase
-          .from("journal_entry_categories")
-          .select("journal_entry_id")
-          .eq("id", junctionData.journal_entry_category_id)
-          .single()
+        // Fetch linked invoices filtered by category ID
+        // This ensures each category only shows its own invoices
+        const { data: linkedData, error: linkedError } = await supabase
+          .from("account_titles_billing_invoices")
+          .select(`
+            id,
+            billing_invoice_id,
+            billing_invoices!inner(
+              invoice_number,
+              grand_total,
+              clients!inner(name, accounts_receivable_code)
+            )
+          `)
+          .eq("journal_entry_category_id", junctionData.journal_entry_category_id)
 
-        if (jeError) throw jeError
+        if (linkedError) throw linkedError
 
-        if (jeData?.journal_entry_id) {
-          // Fetch linked invoices with details
-          const { data: linkedData, error: linkedError } = await supabase
-            .from("account_titles_billing_invoices")
-            .select(`
-              id,
-              billing_invoice_id,
-              billing_invoices!inner(
-                invoice_number,
-                grand_total,
-                clients!inner(name, accounts_receivable_code)
-              )
-            `)
-            .eq("journal_entry_id", jeData.journal_entry_id)
-
-          if (linkedError) throw linkedError
-
-          linkedInvoices = (linkedData || []).map((link: unknown) => {
-            const linkData = link as {
-              id: string
-              billing_invoice_id: string
-              billing_invoices: {
-                invoice_number: string
-                grand_total: number
-                clients: {
-                  name: string
-                  accounts_receivable_code: string
-                }
+        linkedInvoices = (linkedData || []).map((link: unknown) => {
+          const linkData = link as {
+            id: string
+            billing_invoice_id: string
+            billing_invoices: {
+              invoice_number: string
+              grand_total: number
+              clients: {
+                name: string
+                accounts_receivable_code: string
               }
             }
-            return {
-              id: linkData.id,
-              billing_invoice_id: linkData.billing_invoice_id,
-              invoice_number: linkData.billing_invoices.invoice_number,
-              client_name: linkData.billing_invoices.clients.name,
-              grand_total: Number(linkData.billing_invoices.grand_total),
-              ar_code: linkData.billing_invoices.clients.accounts_receivable_code || "",
-            }
-          })
-        }
+          }
+          return {
+            id: linkData.id,
+            billing_invoice_id: linkData.billing_invoice_id,
+            invoice_number: linkData.billing_invoices.invoice_number,
+            client_name: linkData.billing_invoices.clients.name,
+            grand_total: Number(linkData.billing_invoices.grand_total),
+            ar_code: linkData.billing_invoices.clients.accounts_receivable_code || "",
+          }
+        })
       }
 
       setVoucher({
@@ -256,9 +246,11 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
           </Button>
           <div>
             <h1 className="text-3xl font-bold">General Voucher</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Reference: {voucher.reference || "N/A"}
-            </p>
+            {voucher.reference && (
+              <p className="text-sm text-muted-foreground mt-1">
+                Reference: {voucher.reference}
+              </p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -316,13 +308,6 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
             <div className="space-y-4">
               <div>
                 <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-2">
-                  <Hash className="h-4 w-4" />
-                  Reference
-                </h3>
-                <p className="text-sm text-gray-900">{voucher.reference || "N/A"}</p>
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-2">
                   <CreditCard className="h-4 w-4" />
                   Total Amount
                 </h3>
@@ -334,13 +319,24 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
           </div>
         </div>
 
-        {/* Particulars */}
+        {/* Particulars and Reference */}
         <div className="border-b p-6">
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            Particulars
-          </h3>
-          <p className="text-sm text-gray-900 whitespace-pre-wrap">{voucher.particulars}</p>
+          <div className="grid grid-cols-2 gap-6">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Particulars
+              </h3>
+              <p className="text-sm text-gray-900 whitespace-pre-wrap">{voucher.particulars}</p>
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <Hash className="h-4 w-4" />
+                Reference
+              </h3>
+              <p className="text-sm text-gray-900">{voucher.reference || "N/A"}</p>
+            </div>
+          </div>
         </div>
 
         {/* Journal Entries */}

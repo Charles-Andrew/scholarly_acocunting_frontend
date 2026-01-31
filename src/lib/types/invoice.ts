@@ -1,5 +1,14 @@
 /**
- * Invoice type definition
+ * Line item for billing invoices
+ */
+export type LineItem = {
+  id: string
+  description: string
+  amount: number
+}
+
+/**
+ * Billing Invoice type definition
  */
 export type Invoice = {
   id: string
@@ -24,4 +33,25 @@ export type Invoice = {
   client_name?: string
   income_category_name?: string
   prepared_by_name?: string
+}
+
+/**
+ * User type for billing invoice forms
+ */
+export type BillingInvoiceUser = {
+  id: string
+  email: string
+  full_name?: string
+  position?: string
+}
+
+/**
+ * Income Category type definition
+ */
+export type IncomeCategory = {
+  id: string
+  name: string
+  slug: string
+  created_at: string
+  updated_at: string
 }

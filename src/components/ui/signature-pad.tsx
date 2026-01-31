@@ -188,8 +188,7 @@ export function SignaturePad({
 
       setHasSignature(true)
       onSignatureSaved?.()
-    } catch (error) {
-      console.error("Error saving signature:", error)
+    } catch {
       alert("Failed to save signature. Please try again.")
     }
   }
@@ -205,8 +204,7 @@ export function SignaturePad({
 
       clearSignature()
       onSignatureSaved?.()
-    } catch (error) {
-      console.error("Error deleting signature:", error)
+    } catch {
       alert("Failed to delete signature. Please try again.")
     }
   }

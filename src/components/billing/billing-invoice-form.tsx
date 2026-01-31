@@ -25,37 +25,9 @@ import Link from "next/link"
 import { ArrowLeft, Plus, Trash2 } from "lucide-react"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { toast } from "@/hooks/use-toast"
-import type { Invoice } from "@/lib/types/invoice"
-
-type Client = {
-  id: string
-  name: string
-  accounts_receivable_code: string | null
-}
-
-type IncomeCategory = {
-  id: string
-  name: string
-}
-
-type BankAccount = {
-  id: string
-  name: string
-  bank_name: string
-  account_number: string
-}
-
-type User = {
-  id: string
-  email: string
-  full_name?: string
-}
-
-type LineItem = {
-  id: string
-  description: string
-  amount: number
-}
+import type { Invoice, LineItem, BillingInvoiceUser } from "@/lib/types/invoice"
+import type { Client, IncomeCategory } from "@/lib/types"
+import type { BankAccount } from "@/lib/types/bank-account"
 
 interface BillingInvoiceFormProps {
   invoiceId?: string
@@ -68,7 +40,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
   const [clients, setClients] = useState<Client[]>([])
   const [incomeCategories, setIncomeCategories] = useState<IncomeCategory[]>([])
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
-  const [users, setUsers] = useState<User[]>([])
+  const [users, setUsers] = useState<BillingInvoiceUser[]>([])
   const [invoice, setInvoice] = useState<Invoice | null>(null)
   const [lineItems, setLineItems] = useState<LineItem[]>([
     { id: crypto.randomUUID(), description: "", amount: 0 },
@@ -86,9 +58,9 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
 
   const fetchData = useCallback(async () => {
     const [clientsData, categoriesData, bankData, usersData] = await Promise.all([
-      supabase.from("clients").select("id, name, accounts_receivable_code").order("name"),
-      supabase.from("income_categories").select("id, name").order("name"),
-      supabase.from("bank_accounts").select("id, name, bank_name, account_number"),
+      supabase.from("clients").select("id, name, accounts_receivable_code, created_at, updated_at").order("name"),
+      supabase.from("income_categories").select("id, name, slug, created_at, updated_at").order("name"),
+      supabase.from("bank_accounts").select("id, name, bank_name, account_number, created_at, updated_at"),
       supabase.from("user_profiles").select("id, email, full_name"),
     ])
 
@@ -147,8 +119,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
       } else {
         setLineItems([{ id: crypto.randomUUID(), description: "", amount: 0 }])
       }
-    } catch (error) {
-      console.error("Error fetching invoice:", error)
+    } catch {
       toast.error({
         title: "Error",
         description: "Failed to load invoice data.",
@@ -334,8 +305,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
       }
 
       window.location.href = "/billing-invoice"
-    } catch (error) {
-      console.error("Error saving invoice:", error)
+    } catch {
       toast.error({
         title: "Error",
         description: "Failed to save invoice. Please try again.",

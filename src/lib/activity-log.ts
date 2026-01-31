@@ -24,7 +24,6 @@ export async function logActivity({
   } = await supabase.auth.getUser()
 
   if (userError || !user) {
-    console.error("Failed to get user for activity log:", userError?.message)
     return
   }
 
@@ -52,7 +51,6 @@ export async function logActivity({
   })
 
   if (error) {
-    console.error("Failed to insert activity log:", error.message)
   }
 }
 

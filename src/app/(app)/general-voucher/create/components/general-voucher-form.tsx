@@ -118,6 +118,12 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
     }
   }, [supabase])
 
+  // Ref to access current selectedCategoryId without triggering refetch
+  const selectedCategoryIdRef = React.useRef(selectedCategoryId)
+  useEffect(() => {
+    selectedCategoryIdRef.current = selectedCategoryId
+  }, [selectedCategoryId])
+
   // Fetch journal entry categories (only unused ones, or current selection in edit mode)
   const fetchCategories = useCallback(async () => {
     setIsFetchingCategories(true)
@@ -142,10 +148,12 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
       if (error) throw error
 
       // Filter out used categories, but keep the current selection if in edit mode
+      // Use ref to access current value without making it a dependency
+      const currentSelectedId = selectedCategoryIdRef.current
       const filteredCategories = (allCategories || []).filter(
         (cat) =>
           !usedCategoryIds.has(cat.id) ||
-          (isEditMode && cat.id === selectedCategoryId)
+          (isEditMode && cat.id === currentSelectedId)
       )
 
       setCategories(filteredCategories)
@@ -158,7 +166,7 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
     } finally {
       setIsFetchingCategories(false)
     }
-  }, [supabase, isEditMode, selectedCategoryId])
+  }, [supabase, isEditMode])
 
   // Fetch existing voucher data for edit mode
   const fetchVoucherData = useCallback(async () => {
@@ -216,6 +224,9 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
     }
   }, [isEditMode, fetchVoucherData])
 
+  // Ref to track the latest fetch request to prevent race conditions
+  const latestFetchRef = React.useRef<string>("")
+
   // Fetch journal entry details when selection changes
   const fetchJournalEntryDetails = useCallback(async (categoryId: string) => {
     if (!categoryId) {
@@ -223,28 +234,20 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
       return
     }
 
+    // Track this request as the latest one
+    const requestId = crypto.randomUUID()
+    latestFetchRef.current = requestId
+
     setIsLoadingDetails(true)
     try {
-      // Find the journal entry ID for this category
-      const { data: categoryData, error: categoryError } = await supabase
-        .from("journal_entry_categories")
-        .select("journal_entry_id, category_name")
-        .eq("id", categoryId)
-        .single()
-
-      if (categoryError) throw categoryError
-
-      if (!categoryData?.journal_entry_id) {
-        setLinkedInvoices([])
-        return
-      }
-
-      // Fetch linked invoices with details
+      // Fetch linked invoices with details - filter by category ID
+      // This ensures each category only shows its own invoices
       const { data: linkedData, error: linkedError } = await supabase
         .from("account_titles_billing_invoices")
         .select(`
           id,
           billing_invoice_id,
+          journal_entry_category_id,
           billing_invoices!inner(
             invoice_number,
             grand_total,
@@ -252,7 +255,7 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
             clients!inner(name, accounts_receivable_code)
           )
         `)
-        .eq("journal_entry_id", categoryData.journal_entry_id)
+        .eq("journal_entry_category_id", categoryId)
 
       if (linkedError) throw linkedError
 
@@ -293,15 +296,24 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
         invoice.items = itemsData || []
       }
 
-      setLinkedInvoices(formattedInvoices)
+      // Only update state if this is still the latest request
+      if (latestFetchRef.current === requestId) {
+        setLinkedInvoices(formattedInvoices)
+      }
     } catch {
-      toast({
-        title: "Error",
-        description: "Failed to load journal entry details.",
-        variant: "error",
-      })
+      // Only show error if this is still the latest request
+      if (latestFetchRef.current === requestId) {
+        toast({
+          title: "Error",
+          description: "Failed to load journal entry details.",
+          variant: "error",
+        })
+      }
     } finally {
-      setIsLoadingDetails(false)
+      // Only clear loading if this is still the latest request
+      if (latestFetchRef.current === requestId) {
+        setIsLoadingDetails(false)
+      }
     }
   }, [supabase])
 
@@ -588,9 +600,10 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
                       key={category.id}
                       className={
                         selectedCategoryId === category.id
-                          ? "bg-muted/50"
-                          : undefined
+                          ? "bg-muted/50 cursor-pointer"
+                          : "cursor-pointer"
                       }
+                      onClick={() => handleCategoryChange(category.id)}
                     >
                       <TableCell>
                         <RadioGroupItem

@@ -1,14 +1,19 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 
-console.log('🔐 Middleware loaded');
-
-const protectedRoutes = ['/dashboard'];
+const protectedRoutes = [
+  '/dashboard',
+  '/clients',
+  '/billing-invoice',
+  '/journal-entries',
+  '/general-voucher',
+  '/reports',
+  '/logs',
+  '/settings'
+];
 const publicRoutes = ['/login', '/signup', '/auth/callback'];
 
 export async function middleware(request: NextRequest) {
-  console.log('🔐 Middleware running for:', request.nextUrl.pathname);
-
   let supabaseResponse = NextResponse.next({
     request,
   });
@@ -22,7 +27,7 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
+          cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
           supabaseResponse = NextResponse.next({
@@ -38,7 +43,6 @@ export async function middleware(request: NextRequest) {
 
   // Get session - this also refreshes the token
   const { data: { session } } = await supabase.auth.getSession();
-  console.log('🔐 Session exists:', !!session);
 
   const pathname = request.nextUrl.pathname;
 

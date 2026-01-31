@@ -37,7 +37,7 @@ const formSchema = z.object({
 type FormValues = z.infer<typeof formSchema>
 
 interface AddClientModalProps {
-  onClientAdded: () => void
+  onClientAdded?: () => void
 }
 
 export function AddClientModal({ onClientAdded }: AddClientModalProps) {
@@ -87,9 +87,8 @@ export function AddClientModal({ onClientAdded }: AddClientModalProps) {
       })
       setOpen(false)
       form.reset()
-      onClientAdded()
-    } catch (error) {
-      console.error("Error creating client:", error)
+      onClientAdded?.()
+    } catch {
       toast.error({
         title: "Error",
         description: "An unexpected error occurred.",

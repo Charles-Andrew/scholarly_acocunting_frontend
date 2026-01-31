@@ -95,8 +95,7 @@ export function EditClientModal({ client, onClientUpdated, children }: EditClien
       })
       setOpen(false)
       onClientUpdated()
-    } catch (error) {
-      console.error("Error updating client:", error)
+    } catch {
       toast.error({
         title: "Error",
         description: "An unexpected error occurred.",

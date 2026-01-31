@@ -1,4 +1,5 @@
 import { createBrowserClient } from "@supabase/ssr";
+import type { Session } from "@supabase/supabase-js";
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,6 +33,8 @@ export async function getSession() {
  * Listen to auth state changes
  * Returns an unsubscribe function
  */
-export function onAuthStateChange(callback: (event: string, session: any) => void) {
-  return supabase.auth.onAuthStateChange(callback);
+export function onAuthStateChange(callback: (event: string, session: Session | null) => void) {
+  return supabase.auth.onAuthStateChange((event, session) => {
+    callback(event, session);
+  });
 }

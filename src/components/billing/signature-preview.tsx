@@ -1,8 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import Image from "next/image"
 import { createClient } from "@/lib/supabase/client"
-import { Label } from "@/components/ui/label"
 
 interface SignaturePreviewProps {
   userId: string
@@ -29,7 +29,7 @@ export function SignaturePreview({ userId, userName, role }: SignaturePreviewPro
   return (
     <div className="text-center">
       {signature ? (
-        <img src={signature} alt="Signature" className="max-h-20 mx-auto" />
+        <Image src={signature} alt="Signature" width={200} height={80} className="max-h-20 mx-auto" unoptimized />
       ) : (
         <div className="h-20 flex items-center justify-center text-muted-foreground border-2 border-dashed rounded">
           No signature set

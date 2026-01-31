@@ -1,7 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { Bell } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { Bell, FileText, CheckCircle2, AlertCircle } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import {
   Popover,
@@ -32,6 +33,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
   const [open, setOpen] = React.useState(false)
   const [loading, setLoading] = React.useState(true)
   const supabase = createClient()
+  const router = useRouter()
 
   const fetchNotifications = React.useCallback(async () => {
     try {
@@ -43,14 +45,12 @@ export function NotificationBell({ userId }: NotificationBellProps) {
         .limit(20)
 
       if (error) {
-        console.error("Error fetching notifications:", error)
         return
       }
 
       setNotifications(data || [])
       setUnreadCount(data?.filter((n) => !n.read).length || 0)
-    } catch (error) {
-      console.error("Error fetching notifications:", error)
+    } catch {
     } finally {
       setLoading(false)
     }
@@ -96,8 +96,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
         prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n))
       )
       setUnreadCount((prev) => Math.max(0, prev - 1))
-    } catch (error) {
-      console.error("Error marking notification as read:", error)
+    } catch {
     }
   }
 
@@ -111,8 +110,7 @@ export function NotificationBell({ userId }: NotificationBellProps) {
 
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
       setUnreadCount(0)
-    } catch (error) {
-      console.error("Error marking all as read:", error)
+    } catch {
     }
   }
 
@@ -129,6 +127,30 @@ export function NotificationBell({ userId }: NotificationBellProps) {
     if (diffHours < 24) return `${diffHours}h ago`
     if (diffDays < 7) return `${diffDays}d ago`
     return date.toLocaleDateString()
+  }
+
+  const getNotificationIcon = (type: string) => {
+    switch (type) {
+      case 'approval_requested':
+        return <FileText className="h-4 w-4 text-orange-500" />
+      case 'invoice_approved':
+        return <CheckCircle2 className="h-4 w-4 text-green-500" />
+      default:
+        return <AlertCircle className="h-4 w-4 text-blue-500" />
+    }
+  }
+
+  const handleNotificationClick = async (notification: Notification) => {
+    // Mark as read
+    if (!notification.read) {
+      await markAsRead(notification.id)
+    }
+
+    // Navigate if link exists
+    if (notification.link) {
+      setOpen(false)
+      router.push(notification.link)
+    }
   }
 
   return (
@@ -169,23 +191,28 @@ export function NotificationBell({ userId }: NotificationBellProps) {
               {notifications.map((notification) => (
                 <button
                   key={notification.id}
-                  onClick={() => markAsRead(notification.id)}
-                  className={`flex flex-col items-start gap-1 border-b px-4 py-3 text-left transition-colors hover:bg-muted/50 ${
+                  onClick={() => handleNotificationClick(notification)}
+                  className={`flex items-start gap-3 border-b px-4 py-3 text-left transition-colors hover:bg-muted/50 ${
                     !notification.read ? "bg-muted/30" : ""
                   }`}
                 >
-                  <div className="flex w-full items-center justify-between gap-2">
-                    <span className="font-medium text-sm">{notification.title}</span>
-                    {!notification.read && (
-                      <span className="h-2 w-2 rounded-full bg-primary" />
-                    )}
+                  <div className="mt-0.5 flex-shrink-0">
+                    {getNotificationIcon(notification.type)}
                   </div>
-                  <p className="text-xs text-muted-foreground line-clamp-2">
-                    {notification.message}
-                  </p>
-                  <span className="text-[10px] text-muted-foreground">
-                    {formatTime(notification.created_at)}
-                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex w-full items-center justify-between gap-2">
+                      <span className="font-medium text-sm line-clamp-1">{notification.title}</span>
+                      {!notification.read && (
+                        <span className="h-2 w-2 rounded-full bg-primary flex-shrink-0" />
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                      {notification.message}
+                    </p>
+                    <span className="text-[10px] text-muted-foreground mt-1">
+                      {formatTime(notification.created_at)}
+                    </span>
+                  </div>
                 </button>
               ))}
             </div>

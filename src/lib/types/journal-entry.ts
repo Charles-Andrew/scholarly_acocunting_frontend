@@ -39,3 +39,30 @@ export type JournalEntryCategory = {
   created_at?: string
   updated_at?: string
 }
+
+/**
+ * Linked invoice from billing for journal entry details
+ */
+export type LinkedInvoice = {
+  id: string
+  billing_invoice_id: string
+  invoice_number: string
+  client_name: string
+  grand_total: number
+  ar_code: string
+  category_name: string
+  items?: {
+    description: string
+    amount: number
+  }[]
+}
+
+/**
+ * Extended invoice with items for journal entry generation
+ */
+export type InvoiceWithItems = InvoiceForJournalEntry & {
+  items?: InvoiceLineItem[]
+  ar_code?: string
+  income_category_name?: string
+  totalAmount?: number
+}

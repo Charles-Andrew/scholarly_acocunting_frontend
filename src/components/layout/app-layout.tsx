@@ -105,13 +105,15 @@ export function AppLayout({
   navItems = defaultNavItems,
   showThemeToggle = false,
 }: AppLayoutProps) {
-  const [user, setUser] = useState<unknown>(null)
+  const [user, setUser] = useState<{ id: string; email?: string } | null>(null)
   const [userProfile, setUserProfile] = useState<{ full_name: string | null } | null>(null)
   const { setTheme, resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    setMounted(true)
+    // Use timeout to avoid synchronous setState in effect (prevents cascading renders)
+    const timer = setTimeout(() => setMounted(true), 0)
+    return () => clearTimeout(timer)
   }, [])
 
   useEffect(() => {
@@ -130,8 +132,7 @@ export function AppLayout({
             })
         }
       })
-      .catch((err) => {
-        console.error("Failed to get user:", err)
+      .catch(() => {
       })
 
     const { data: { subscription } } = onAuthStateChange((event, session) => {
@@ -160,8 +161,7 @@ export function AppLayout({
   const handleLogout = async () => {
     try {
       await fetch('/logout', { method: 'POST' })
-    } catch (error) {
-      console.error('Logout failed:', error)
+    } catch {
       window.location.href = '/login'
     }
   }
@@ -216,48 +216,65 @@ export function AppLayout({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className="relative h-auto w-full justify-start rounded-md px-3 py-2 shadow-sm">
-                <Avatar className="h-8 w-8 mr-3">
-                  <AvatarImage src={(user as { user_metadata?: { avatar_url?: string } })?.user_metadata?.avatar_url || ""} alt="User" />
-                  <AvatarFallback className="bg-primary/10 text-primary">
-                    {(user as { email?: string })?.email?.charAt(0).toUpperCase() || "U"}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex flex-col items-start">
-                  <span className="font-medium text-sm">{getFirstName()}</span>
-                  <span className="text-xs text-muted-foreground truncate max-w-[120px]">
-                    {(user as { email?: string })?.email}
-                  </span>
-                </div>
-                <User className="ml-auto h-4 w-4 text-muted-foreground" />
+                {mounted ? (
+                  <>
+                    <Avatar className="h-8 w-8 mr-3">
+                      <AvatarImage src={(user as { user_metadata?: { avatar_url?: string } })?.user_metadata?.avatar_url || ""} alt="User" />
+                      <AvatarFallback className="bg-primary/10 text-primary">
+                        {(user as { email?: string })?.email?.charAt(0).toUpperCase() || "U"}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex flex-col items-start">
+                      <span className="font-medium text-sm">{getFirstName()}</span>
+                      <span className="text-xs text-muted-foreground truncate max-w-[120px]">
+                        {(user as { email?: string })?.email}
+                      </span>
+                    </div>
+                    <User className="ml-auto h-4 w-4 text-muted-foreground" />
+                  </>
+                ) : (
+                  <>
+                    <Avatar className="h-8 w-8 mr-3">
+                      <AvatarFallback className="bg-primary/10 text-primary">U</AvatarFallback>
+                    </Avatar>
+                    <div className="flex flex-col items-start">
+                      <span className="font-medium text-sm">Loading...</span>
+                      <span className="text-xs text-muted-foreground truncate max-w-[120px]">...</span>
+                    </div>
+                    <User className="ml-auto h-4 w-4 text-muted-foreground" />
+                  </>
+                )}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent side="right" align="start" sideOffset={4} className="w-56">
-              <DropdownMenuLabel className="font-normal">
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">{getFirstName()}</p>
-                  <p className="text-xs leading-none text-muted-foreground">
-                    {(user as { email?: string })?.email}
-                  </p>
-                </div>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <a href="/settings" className="cursor-pointer">
-                  <Settings className="mr-2 h-4 w-4" />
-                  Settings
-                </a>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <button
-                  onClick={handleLogout}
-                  className="w-full cursor-pointer text-red-600"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Log out
-                </button>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
+            {mounted && (
+              <DropdownMenuContent side="right" align="start" sideOffset={4} className="w-56">
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium leading-none">{getFirstName()}</p>
+                    <p className="text-xs leading-none text-muted-foreground">
+                      {(user as { email?: string })?.email}
+                    </p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <a href="/settings" className="cursor-pointer">
+                    <Settings className="mr-2 h-4 w-4" />
+                    Settings
+                  </a>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <button
+                    onClick={handleLogout}
+                    className="w-full cursor-pointer text-red-600"
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Log out
+                  </button>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            )}
           </DropdownMenu>
         </SidebarFooter>
       </Sidebar>
