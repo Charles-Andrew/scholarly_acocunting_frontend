@@ -11,6 +11,7 @@ export type GeneralVoucher = {
   amount: number
   created_by: string | null
   recipient_id: string | null
+  gv_id: string | null
 }
 
 /**
@@ -60,6 +61,8 @@ export type VoucherDetail = GeneralVoucher & {
     id: string
     full_name: string | null
     email: string
+    position?: string | null
+    signature_image?: string | null
   } | null
   journal_entry_categories?: GeneralVoucherJournalEntryCategory | null
   linked_invoices: GeneralVoucherLinkedInvoice[]

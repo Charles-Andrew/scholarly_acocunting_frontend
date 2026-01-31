@@ -50,9 +50,6 @@ export async function POST(
     .from("billing_invoices")
     .update({
       status: "approved",
-      signed: true,
-      signed_at: new Date().toISOString(),
-      signed_by: user.id,
     })
     .eq("id", resolvedParams.id)
 

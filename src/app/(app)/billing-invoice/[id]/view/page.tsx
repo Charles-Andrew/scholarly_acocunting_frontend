@@ -4,7 +4,7 @@ import * as React from "react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
-import { ArrowLeft, Printer, CheckCircle2, Send } from "lucide-react"
+import { ArrowLeft, Printer, CheckCircle2, Send, Signature, X } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -33,8 +33,9 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
   const [users, setUsers] = React.useState<BillingInvoiceUser[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
   const [currentUserId, setCurrentUserId] = React.useState<string | null>(null)
-  const [preparedBySignature, setPreparedBySignature] = React.useState<string | null>(null)
-  const [approvedBySignature, setApprovedBySignature] = React.useState<string | null>(null)
+  const [preparedBySignature, setPreparedBySignature] = React.useState<{ signature_image: string; signed_at: string } | null>(null)
+  const [approvedBySignature, setApprovedBySignature] = React.useState<{ signature_image: string; signed_at: string } | null>(null)
+  const [isTogglingSignature, setIsTogglingSignature] = React.useState(false)
 
   const fetchData = React.useCallback(async () => {
     try {
@@ -47,7 +48,7 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
       // Fetch invoice
       const { data: invoiceData, error: invoiceError } = await supabase
         .from("billing_invoices")
-        .select("*, sent_to_client_at, signed, signed_at")
+        .select("*, sent_to_client_at")
         .eq("id", resolvedParams.id)
         .single()
 
@@ -89,23 +90,26 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
         }))
         setUsers(formattedUsers)
 
-        // Fetch signatures for prepared_by and approved_by
-        if (invoiceData.prepared_by) {
-          const { data: preparedSig } = await supabase
-            .from("user_profiles")
-            .select("signature_image")
-            .eq("id", invoiceData.prepared_by)
-            .single()
-          setPreparedBySignature(preparedSig?.signature_image || null)
-        }
+        // Fetch signatures from invoice_signatures table
+        const { data: signatures } = await supabase
+          .from("invoice_signatures")
+          .select("signature_type, signature_image, signed_at")
+          .eq("invoice_id", resolvedParams.id)
 
-        if (invoiceData.approved_by) {
-          const { data: approvedSig } = await supabase
-            .from("user_profiles")
-            .select("signature_image")
-            .eq("id", invoiceData.approved_by)
-            .single()
-          setApprovedBySignature(approvedSig?.signature_image || null)
+        if (signatures) {
+          signatures.forEach((sig) => {
+            if (sig.signature_type === "prepared_by") {
+              setPreparedBySignature({
+                signature_image: sig.signature_image,
+                signed_at: sig.signed_at,
+              })
+            } else if (sig.signature_type === "approved_by") {
+              setApprovedBySignature({
+                signature_image: sig.signature_image,
+                signed_at: sig.signed_at,
+              })
+            }
+          })
         }
       }
     } catch {
@@ -186,6 +190,85 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
     window.print()
   }
 
+  const handleToggleSignature = async (signatureType: "prepared_by" | "approved_by") => {
+    const hasSignature = signatureType === "prepared_by" ? preparedBySignature : approvedBySignature
+
+    setIsTogglingSignature(true)
+    try {
+      if (hasSignature) {
+        // Remove signature
+        const response = await fetch(`/api/billing-invoices/${resolvedParams.id}/signature`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ signatureType }),
+        })
+
+        if (!response.ok) {
+          const data = await response.json()
+          throw new Error(data.error || "Failed to remove signature")
+        }
+
+        if (signatureType === "prepared_by") {
+          setPreparedBySignature(null)
+        } else {
+          setApprovedBySignature(null)
+        }
+
+        toast.success({
+          title: "Signature Removed",
+          description: "Your signature has been removed from this invoice.",
+        })
+      } else {
+        // Add signature
+        const response = await fetch(`/api/billing-invoices/${resolvedParams.id}/signature`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ signatureType }),
+        })
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to add signature")
+        }
+
+        // Get current user's signature image
+        const userProfile = await supabase
+          .from("user_profiles")
+          .select("signature_image")
+          .eq("id", currentUserId)
+          .single()
+
+        const signatureImage = userProfile.data?.signature_image
+
+        if (signatureImage) {
+          const newSignature = {
+            signature_image: signatureImage,
+            signed_at: new Date().toISOString(),
+          }
+
+          if (signatureType === "prepared_by") {
+            setPreparedBySignature(newSignature)
+          } else {
+            setApprovedBySignature(newSignature)
+          }
+        }
+
+        toast.success({
+          title: "Signature Added",
+          description: "Your signature has been added to this invoice.",
+        })
+      }
+    } catch (error) {
+      toast.error({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to toggle signature.",
+      })
+    } finally {
+      setIsTogglingSignature(false)
+    }
+  }
+
   const handleSendToClient = async () => {
     try {
       // Update the sent_to_client_at timestamp
@@ -264,12 +347,15 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
           {getStatusBadge(invoice.status)}
         </div>
         <div className="flex items-center gap-2">
-          {invoice.status === "for_approval" && currentUserId === invoice.approved_by && (
-            <Button variant="outline" onClick={handleApprove}>
-              <CheckCircle2 className="mr-2 h-4 w-4" />
-              Approve
-            </Button>
-          )}
+          {invoice.status === "for_approval" &&
+            currentUserId === invoice.approved_by &&
+            preparedBySignature &&
+            approvedBySignature && (
+              <Button variant="outline" onClick={handleApprove}>
+                <CheckCircle2 className="mr-2 h-4 w-4" />
+                Approve
+              </Button>
+            )}
           {invoice.status === "approved" && (
             <Button variant="default" onClick={handleSendToClient}>
               <Send className="mr-2 h-4 w-4" />
@@ -383,19 +469,21 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
         {/* Section 7: Prepared By and Approved By */}
         <div className="px-8 py-6">
           <div className="grid grid-cols-2 gap-8">
-            <div className="relative">
+            <div className="relative group">
               <p className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-2">Prepared by:</p>
               <div className="relative inline-block min-w-[200px]">
                 <div className="relative h-16 -mb-8">
-                  {(invoice.status === "for_approval" || invoice.status === "approved") && preparedBySignature && (
+                  {preparedBySignature ? (
                     <Image
-                      src={preparedBySignature}
+                      key={`prepared-${preparedBySignature.signed_at}`}
+                      src={preparedBySignature.signature_image}
                       alt="Signature"
                       fill
                       className="object-contain z-10"
                       unoptimized
+                      priority
                     />
-                  )}
+                  ) : null}
                 </div>
                 <div>
                   <p className="text-sm text-gray-900 font-medium border-b border-gray-900 pb-1">
@@ -405,21 +493,44 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
                     <p className="text-xs text-gray-600 pt-1">{preparedBy.position}</p>
                   )}
                 </div>
+                {/* Hover button for current user */}
+                {currentUserId &&
+                  currentUserId === invoice.prepared_by &&
+                  invoice.status !== "approved" && (
+                    <button
+                      onClick={() => handleToggleSignature("prepared_by")}
+                      disabled={isTogglingSignature}
+                      className={`absolute -top-2 -right-2 p-1.5 rounded-full shadow-md transition-all duration-200 print:hidden opacity-0 group-hover:opacity-100 z-50 ${
+                        preparedBySignature
+                          ? "bg-red-100 text-red-600 hover:bg-red-200"
+                          : "bg-green-100 text-green-600 hover:bg-green-200"
+                      }`}
+                      title={preparedBySignature ? "Remove signature" : "Add signature"}
+                    >
+                      {preparedBySignature ? (
+                        <X className="h-4 w-4" />
+                      ) : (
+                        <Signature className="h-4 w-4" />
+                      )}
+                    </button>
+                  )}
               </div>
             </div>
-            <div className="relative">
+            <div className="relative group">
               <p className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-2">Approved by:</p>
               <div className="relative inline-block min-w-[200px]">
                 <div className="relative h-16 -mb-8">
-                  {invoice.status === "approved" && approvedBySignature && (
+                  {approvedBySignature ? (
                     <Image
-                      src={approvedBySignature}
+                      key={`approved-${approvedBySignature.signed_at}`}
+                      src={approvedBySignature.signature_image}
                       alt="Signature"
                       fill
                       className="object-contain z-10"
                       unoptimized
+                      priority
                     />
-                  )}
+                  ) : null}
                 </div>
                 <div>
                   <p className="text-sm text-gray-900 font-medium border-b border-gray-900 pb-1">
@@ -429,6 +540,27 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
                     <p className="text-xs text-gray-600 pt-1">{approvedBy.position}</p>
                   )}
                 </div>
+                {/* Hover button for current user */}
+                {currentUserId &&
+                  currentUserId === invoice.approved_by &&
+                  invoice.status !== "approved" && (
+                  <button
+                    onClick={() => handleToggleSignature("approved_by")}
+                    disabled={isTogglingSignature}
+                    className={`absolute -top-2 -right-2 p-1.5 rounded-full shadow-md transition-all duration-200 print:hidden opacity-0 group-hover:opacity-100 z-50 ${
+                      approvedBySignature
+                        ? "bg-red-100 text-red-600 hover:bg-red-200"
+                        : "bg-green-100 text-green-600 hover:bg-green-200"
+                    }`}
+                    title={approvedBySignature ? "Remove signature" : "Add signature"}
+                  >
+                    {approvedBySignature ? (
+                      <X className="h-4 w-4" />
+                    ) : (
+                      <Signature className="h-4 w-4" />
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           </div>

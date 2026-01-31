@@ -1,37 +1,22 @@
 "use client"
 
 import React, { useState, useEffect, useCallback } from "react"
+import Image from "next/image"
 import { createClient } from "@/lib/supabase/client"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowLeft, Loader2, FileText } from "lucide-react"
+import { ArrowLeft, Printer, Loader2 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import Link from "next/link"
 import { useParams } from "next/navigation"
+import type { BillingInvoiceUser } from "@/lib/types/invoice"
 
 interface JournalEntryDetail {
   id: string
   created_at: string
   updated_at: string
   date: string
-}
-
-interface JournalEntryCategory {
-  id: string
-  journal_entry_id: string
-  category_name: string
-  remarks: string | null
-  reference: string
-  created_at: string
-  updated_at: string
+  entry_number: string | null
+  created_by: string | null
 }
 
 interface LinkedInvoice {
@@ -42,10 +27,7 @@ interface LinkedInvoice {
   grand_total: number
   ar_code: string
   category_name: string
-  items?: {
-    description: string
-    amount: number
-  }[]
+  date: string
 }
 
 interface PreviewEntry {
@@ -56,13 +38,17 @@ interface PreviewEntry {
   amount: number
 }
 
+const LOGO_URL = "https://gjrdshqnjalyivzeciyu.supabase.co/storage/v1/object/public/company-logos/scholarly_logo.png"
+
 export default function JournalEntryDetailPage() {
   const params = useParams()
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
   const [entry, setEntry] = useState<JournalEntryDetail | null>(null)
   const [invoices, setInvoices] = useState<LinkedInvoice[]>([])
-  const [categoryRecords, setCategoryRecords] = useState<JournalEntryCategory[]>([])
+  const [categoryRecords, setCategoryRecords] = useState<{ category_name: string; remarks: string | null; reference: string }[]>([])
+  const [users, setUsers] = useState<BillingInvoiceUser[]>([])
+  const [preparedBySignature, setPreparedBySignature] = useState<string | null>(null)
 
   const fetchJournalEntry = useCallback(async () => {
     if (!params.id) return
@@ -124,20 +110,9 @@ export default function JournalEntryDetailPage() {
           grand_total: Number(invoice.grand_total),
           ar_code: client.accounts_receivable_code || "",
           category_name: invoice.income_categories?.name || "Uncategorized",
+          date: invoice.date,
         }
       })
-
-      // Fetch line items for each invoice
-      for (const invoice of formattedInvoices) {
-        const { data: itemsData } = await supabase
-          .from("billing_invoice_items")
-          .select("description, amount")
-          .eq("invoice_id", invoice.billing_invoice_id)
-
-        invoice.items = itemsData || []
-      }
-
-      setInvoices(formattedInvoices)
 
       // Fetch category records
       const { data: remarksData, error: remarksError } = await supabase
@@ -145,9 +120,33 @@ export default function JournalEntryDetailPage() {
         .select("*")
         .eq("journal_entry_id", params.id)
 
-      if (remarksError) {
-      } else {
-        setCategoryRecords(remarksData || [])
+      if (remarksError) throw remarksError
+      setCategoryRecords(remarksData || [])
+      setInvoices(formattedInvoices)
+
+      // Fetch users for prepared_by
+      const { data: usersData } = await supabase
+        .from("user_profiles")
+        .select("id, email, full_name, position")
+
+      if (usersData) {
+        const formattedUsers = usersData.map((u) => ({
+          id: u.id,
+          email: u.email,
+          full_name: u.full_name || u.email?.split("@")[0] || u.email,
+          position: u.position,
+        }))
+        setUsers(formattedUsers)
+
+        // Fetch signature for created_by
+        if (entryData.created_by) {
+          const { data: preparedSig } = await supabase
+            .from("user_profiles")
+            .select("signature_image")
+            .eq("id", entryData.created_by)
+            .single()
+          setPreparedBySignature(preparedSig?.signature_image || null)
+        }
       }
     } catch {
       toast.error({
@@ -164,22 +163,20 @@ export default function JournalEntryDetailPage() {
   }, [fetchJournalEntry])
 
   const formatCurrency = (value: number) => {
-    return `₱${value.toFixed(2)}`
+    return `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
+    return new Date(dateString).toLocaleDateString("en-PH", {
       year: "numeric",
       month: "long",
       day: "numeric",
     })
   }
 
-  // Calculate totals based on invoice amounts
-  // Total debit = sum of all attached invoice amounts (AR Debit)
-  // Total credit = same amount (Revenue Credit)
-  const totalDebit = invoices.reduce((sum, inv) => sum + inv.grand_total, 0)
-  const totalCredit = totalDebit
+  const handlePrint = () => {
+    window.print()
+  }
 
   // Build preview entries - grouped by category like the generate page
   const previewEntries: PreviewEntry[] = (() => {
@@ -261,6 +258,12 @@ export default function JournalEntryDetailPage() {
 
   const remarksRowSpans = getRemarksRowSpan()
 
+  // Calculate totals
+  const totalDebit = previewEntries.reduce((sum, entry) => sum + (entry.isCreditEntry ? 0 : entry.amount), 0)
+  const totalCredit = previewEntries.reduce((sum, entry) => sum + (entry.isCreditEntry ? entry.amount : 0), 0)
+
+  const preparedBy = users.find((u) => u.id === entry?.created_by)
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -280,147 +283,190 @@ export default function JournalEntryDetailPage() {
           </Button>
           <h1 className="text-3xl font-bold">Journal Entry Not Found</h1>
         </div>
-        <Card>
-          <CardContent className="pt-6 text-center text-muted-foreground">
-            The requested journal entry could not be found.
-          </CardContent>
-        </Card>
       </div>
     )
   }
 
   return (
     <div className="space-y-6 p-6">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/journal-entries">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </Button>
-        <div>
+      {/* Actions Bar */}
+      <div className="flex items-center justify-between print:hidden">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" asChild>
+            <Link href="/journal-entries">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
           <h1 className="text-3xl font-bold">Journal Entry</h1>
+        </div>
+        <Button variant="outline" onClick={handlePrint}>
+          <Printer className="mr-2 h-4 w-4" />
+          Print
+        </Button>
+      </div>
+
+      {/* Journal Entry Document */}
+      <div className="border rounded-lg overflow-hidden bg-white" id="journal-entry-print">
+        {/* Section 1: Company Logo */}
+        <div className="p-8 flex flex-col items-center justify-center">
+          <div className="relative h-20 w-[180px]">
+            <Image
+              src={LOGO_URL}
+              alt="Scholarly Consulting"
+              fill
+              className="object-contain"
+              unoptimized
+              loading="eager"
+            />
+          </div>
+          <p className="text-sm text-gray-600 mt-2">Alim St., Kidapawan City</p>
+        </div>
+
+        {/* Section 2: JOURNAL ENTRY Title */}
+        <div className="px-8 py-4">
+          <h1 className="text-2xl font-bold text-center text-gray-900 tracking-wide">JOURNAL ENTRY</h1>
+        </div>
+
+        {/* Section 3: Date and JE # */}
+        <div className="px-8 py-4">
+          <div className="grid grid-cols-2 gap-8">
+            <div>
+              <p className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-1">Date:</p>
+              <p className="text-base text-gray-900">{formatDate(entry.date)}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-1">JE #:</p>
+              <p className="text-base text-gray-900">{entry.entry_number || "-"}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 4: Journal Entry Preview */}
+        {previewEntries.length > 0 && (
+          <div className="px-8 py-4">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="border-t border-b border-gray-400">
+                  <th className="text-left text-sm font-semibold text-gray-900 uppercase tracking-wider py-3 px-4 w-32">Reference</th>
+                  <th className="text-left text-sm font-semibold text-gray-900 uppercase tracking-wider py-3 px-4">Account Titles</th>
+                  <th className="text-right text-sm font-semibold text-gray-900 uppercase tracking-wider py-3 px-4 w-28">Debit</th>
+                  <th className="text-right text-sm font-semibold text-gray-900 uppercase tracking-wider py-3 px-4 w-28">Credit</th>
+                  <th className="text-left text-sm font-semibold text-gray-900 uppercase tracking-wider py-3 px-4 w-40">Remarks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {previewEntries.map((entry, index) => {
+                  const categoryRecord = categoryRecords.find(r => r.category_name === entry.category_name)
+                  const rowSpan = remarksRowSpans[index]
+
+                  return (
+                    <React.Fragment key={index}>
+                      <tr className={entry.isCreditEntry ? "font-semibold border-t border-gray-200" : "border-b border-gray-200"}>
+                        {rowSpan > 0 && (
+                          <td className="py-3 px-4 text-sm text-gray-900 align-top" rowSpan={rowSpan}>
+                            {categoryRecord?.reference || "-"}
+                          </td>
+                        )}
+                        <td className={`py-3 px-4 text-sm text-gray-900 ${entry.isCreditEntry ? "pl-8" : ""}`}>
+                          {entry.ar_code || "-"}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-gray-900 text-right">
+                          {!entry.isCreditEntry ? formatCurrency(entry.amount) : "-"}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-gray-900 text-right">
+                          {entry.isCreditEntry ? formatCurrency(entry.amount) : "-"}
+                        </td>
+                        {rowSpan > 0 && (
+                          <td className="py-3 px-4 text-sm text-gray-700 align-top" rowSpan={rowSpan}>
+                            {categoryRecord?.remarks ? (
+                              <span className="italic">{categoryRecord.remarks}</span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    </React.Fragment>
+                  )
+                })}
+                {/* Total Row */}
+                <tr className="border-t-2 border-gray-900 font-bold">
+                  <td className="py-3 px-4 text-sm text-gray-900" colSpan={2}>TOTAL</td>
+                  <td className="py-3 px-4 text-sm text-gray-900 text-right">{formatCurrency(totalDebit)}</td>
+                  <td className="py-3 px-4 text-sm text-gray-900 text-right">{formatCurrency(totalCredit)}</td>
+                  <td className="py-3 px-4"></td>
+                </tr>
+              </tbody>
+            </table>
+            {totalDebit !== totalCredit && (
+              <p className="mt-2 text-sm text-amber-600 text-right">
+                Warning: Debits and Credits do not balance.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Section 5: Prepared By */}
+        <div className="px-8 py-6">
+          <div className="relative inline-block min-w-[200px]">
+            <p className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-2">Prepared by:</p>
+            <div className="relative h-16 -mb-8">
+              {preparedBySignature && (
+                <Image
+                  src={preparedBySignature}
+                  alt="Signature"
+                  fill
+                  className="object-contain z-10"
+                  unoptimized
+                />
+              )}
+            </div>
+            <div>
+              <p className="text-sm text-gray-900 font-medium border-b border-gray-900 pb-1">
+                {preparedBy?.full_name || preparedBy?.email || "-"}
+              </p>
+              {preparedBy?.position && (
+                <p className="text-xs text-gray-600 pt-1">{preparedBy.position}</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Section 6: Footer */}
+        <div className="px-8 py-6 border-t border-gray-200">
+          <div className="flex justify-between items-center text-sm text-gray-700">
+            <div className="flex items-center gap-2">
+              <span>0910-027-7571</span>
+              <span className="text-gray-400">{'//'}</span>
+              <span>0966-167-4592</span>
+            </div>
+            <div className="flex flex-col items-center">
+              <span>scholarlyconsulting.co</span>
+            </div>
+            <div>
+              <span>info@scholarlyconsulting.co</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Journal Entry Details */}
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Entry Information
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">Entry Date</label>
-                <p>{formatDate(entry.date)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Summary</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 bg-muted rounded-lg">
-                <label className="text-sm font-medium text-muted-foreground">Total Debit</label>
-                <p className="text-2xl font-bold text-emerald-600">{formatCurrency(totalDebit)}</p>
-              </div>
-              <div className="p-4 bg-muted rounded-lg">
-                <label className="text-sm font-medium text-muted-foreground">Total Credit</label>
-                <p className="text-2xl font-bold text-blue-600">{formatCurrency(totalCredit)}</p>
-              </div>
-            </div>
-            {totalDebit !== totalCredit && (
-              <p className="mt-4 text-sm text-amber-600">
-                Warning: Debits and Credits do not balance.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Journal Entry Preview */}
-      {previewEntries.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Journal Entry Preview</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="border-l">Account Titles</TableHead>
-                    <TableHead className="text-right w-32 border-l">Debit</TableHead>
-                    <TableHead className="text-right w-32 border-l">Credit</TableHead>
-                    <TableHead className="w-48 border-l">Remarks</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {previewEntries.map((entry, index) => {
-                    const categoryRecord = categoryRecords.find(r => r.category_name === entry.category_name)
-                    const isFirstInGroup = index === 0 || previewEntries[index - 1].isCreditEntry;
-                    const rowSpan = remarksRowSpans[index];
-
-                    return (
-                      <React.Fragment key={index}>
-                        {isFirstInGroup && (
-                          <TableRow className="bg-muted/50">
-                            <TableCell colSpan={4} className="py-2">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-muted-foreground">
-                                  Journal Entry Reference:
-                                </span>
-                                <span className="text-sm font-semibold text-blue-600">
-                                  {categoryRecord?.reference || "-"}
-                                </span>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                        <TableRow className={entry.isCreditEntry ? "font-semibold" : ""}>
-                          <TableCell className="border-l pl-8">
-                            {entry.ar_code || "-"}
-                          </TableCell>
-                          <TableCell className="text-right border-l">
-                            {!entry.isCreditEntry ? formatCurrency(entry.amount) : ""}
-                          </TableCell>
-                          <TableCell className="text-right border-l">
-                            {entry.isCreditEntry ? formatCurrency(entry.amount) : ""}
-                          </TableCell>
-                          {rowSpan > 0 && (
-                            <TableCell className="border-l" rowSpan={rowSpan}>
-                              {categoryRecord?.remarks ? (
-                                <span className="text-xs text-muted-foreground italic">
-                                  {categoryRecord.remarks}
-                                </span>
-                              ) : (
-                                <span className="text-muted-foreground">-</span>
-                              )}
-                            </TableCell>
-                          )}
-                        </TableRow>
-                      </React.Fragment>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-            {totalDebit !== totalCredit && (
-              <p className="mt-4 text-sm text-amber-600">
-                Warning: Debits and Credits do not balance.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      {/* Print Styles */}
+      <style>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          #journal-entry-print, #journal-entry-print * {
+            visibility: visible;
+          }
+          #journal-entry-print {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+          }
+        }
+      `}</style>
     </div>
   )
 }

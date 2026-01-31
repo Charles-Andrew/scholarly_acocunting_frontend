@@ -211,7 +211,6 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
     try {
       if (isEditMode && invoice) {
         // UPDATE existing invoice
-        const isSubmittingForApproval = status === "for_approval"
         const { error: invoiceError } = await supabase
           .from("billing_invoices")
           .update({
@@ -225,10 +224,6 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
             bank_account_id: selectedBankAccountId || null,
             prepared_by: preparedById || null,
             approved_by: approvedById || null,
-            // Apply signature when submitting for approval
-            signed: isSubmittingForApproval ? true : invoice.signed,
-            signed_at: isSubmittingForApproval ? new Date().toISOString() : invoice.signed_at,
-            signed_by: isSubmittingForApproval ? preparedById : invoice.signed_by,
             updated_at: new Date().toISOString(),
           })
           .eq("id", invoiceId)

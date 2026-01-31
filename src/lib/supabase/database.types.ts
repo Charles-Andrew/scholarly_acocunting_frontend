@@ -19,18 +19,21 @@ export type Database = {
           billing_invoice_id: string
           created_at: string | null
           id: string
+          journal_entry_category_id: string | null
           journal_entry_id: string
         }
         Insert: {
           billing_invoice_id: string
           created_at?: string | null
           id?: string
+          journal_entry_category_id?: string | null
           journal_entry_id: string
         }
         Update: {
           billing_invoice_id?: string
           created_at?: string | null
           id?: string
+          journal_entry_category_id?: string | null
           journal_entry_id?: string
         }
         Relationships: [
@@ -39,6 +42,13 @@ export type Database = {
             columns: ["billing_invoice_id"]
             isOneToOne: false
             referencedRelation: "billing_invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_titles_billing_invoices_journal_entry_category_id_fkey"
+            columns: ["journal_entry_category_id"]
+            isOneToOne: false
+            referencedRelation: "journal_entry_categories"
             referencedColumns: ["id"]
           },
         ]
@@ -89,6 +99,7 @@ export type Database = {
         Row: {
           account_number: string
           bank_name: string
+          check_name: string | null
           created_at: string
           id: string
           name: string
@@ -97,6 +108,7 @@ export type Database = {
         Insert: {
           account_number: string
           bank_name: string
+          check_name?: string | null
           created_at?: string
           id?: string
           name: string
@@ -105,6 +117,7 @@ export type Database = {
         Update: {
           account_number?: string
           bank_name?: string
+          check_name?: string | null
           created_at?: string
           id?: string
           name?: string
@@ -159,9 +172,6 @@ export type Database = {
           invoice_number: string
           prepared_by: string | null
           sent_to_client_at: string | null
-          signed: boolean | null
-          signed_at: string | null
-          signed_by: string | null
           status: string | null
           updated_at: string | null
         }
@@ -179,9 +189,6 @@ export type Database = {
           invoice_number: string
           prepared_by?: string | null
           sent_to_client_at?: string | null
-          signed?: boolean | null
-          signed_at?: string | null
-          signed_by?: string | null
           status?: string | null
           updated_at?: string | null
         }
@@ -199,9 +206,6 @@ export type Database = {
           invoice_number?: string
           prepared_by?: string | null
           sent_to_client_at?: string | null
-          signed?: boolean | null
-          signed_at?: string | null
-          signed_by?: string | null
           status?: string | null
           updated_at?: string | null
         }
@@ -225,13 +229,6 @@ export type Database = {
             columns: ["income_category_id"]
             isOneToOne: false
             referencedRelation: "income_categories"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "billing_invoices_signed_by_fkey"
-            columns: ["signed_by"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -372,6 +369,48 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      invoice_signatures: {
+        Row: {
+          id: string
+          invoice_id: string
+          signature_image: string
+          signature_type: string
+          signed_at: string | null
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          invoice_id: string
+          signature_image: string
+          signature_type: string
+          signed_at?: string | null
+          user_id: string
+        }
+        Update: {
+          id?: string
+          invoice_id?: string
+          signature_image?: string
+          signature_type?: string
+          signed_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_signatures_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "billing_invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_signatures_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       journal_entries: {
         Row: {
