@@ -33,8 +33,6 @@ export const DEFAULT_TEMPLATE = {
       <strong>Due Date:</strong> {{due_date}}
     </p>
 
-    <a href="{{payment_link}}" class="button">Pay Now</a>
-
     <p>Questions about this invoice? Simply reply to this email.</p>
 
     <div class="footer">

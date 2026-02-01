@@ -7,230 +7,298 @@ import {
   StyleSheet,
   Text,
   View,
+  Image,
 } from "npm:@react-pdf/renderer@3.4.0";
 import React from "npm:react@18.2.0";
 
-// Types for invoice data
-interface InvoiceItem {
+// Types matching the frontend InvoicePDF
+interface LineItem {
+  id?: string;
   description: string;
-  quantity: number;
-  unit_price: number;
   amount: number;
 }
 
-interface InvoiceData {
-  number: string;
-  date: string;
-  due_date: string;
-  customer: {
-    name: string;
-    email: string;
-    address?: string;
-  };
-  company: {
-    name: string;
-    email?: string;
-    address?: string;
-  };
-  items: InvoiceItem[];
-  subtotal: number;
-  tax?: number;
-  total: number;
-  notes?: string;
-  discount?: number;
+interface BankAccount {
+  name?: string;
+  bank_name?: string;
+  account_number?: string;
 }
+
+interface SignatureData {
+  full_name?: string;
+  email?: string;
+  position?: string;
+}
+
+interface SignatureImage {
+  signature_image: string;
+  signed_at: string;
+}
+
+interface InvoicePDFData {
+  invoice_number: string;
+  date: string;
+  amount_due: number;
+  discount: number;
+  grand_total: number;
+  client_name: string;
+  client_email?: string;
+  items: LineItem[];
+  bank_account?: BankAccount | null;
+  prepared_by?: SignatureData | null;
+  approved_by?: SignatureData | null;
+  prepared_by_signature?: SignatureImage | null;
+  approved_by_signature?: SignatureImage | null;
+}
+
+const LOGO_URL = "https://gjrdshqnjalyivzeciyu.supabase.co/storage/v1/object/public/company-logos/scholarly_logo.png";
 
 const styles = StyleSheet.create({
   page: {
-    padding: 40,
+    padding: 0,
     fontSize: 11,
     fontFamily: "Helvetica",
-    color: "#333",
+    color: "#111827",
   },
-  header: {
+  // Section 1: Logo
+  logoSection: {
+    padding: 32,
+    paddingBottom: 16,
+    alignItems: "center",
+  },
+  logo: {
+    width: 180,
+    height: 60,
+    objectFit: "contain",
+    marginBottom: 8,
+  },
+  companyAddress: {
+    fontSize: 10,
+    color: "#4B5563",
+  },
+  // Section 2: Title
+  titleSection: {
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: "bold",
+    textAlign: "center",
+    color: "#111827",
+    letterSpacing: 1,
+  },
+  // Section 3: Bill To and Invoice Number
+  headerSection: {
+    paddingHorizontal: 32,
+    paddingVertical: 16,
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 40,
   },
-  headerLeft: {
+  billToSection: {
     flex: 1,
   },
-  headerRight: {
+  invoiceNumberSection: {
     flex: 1,
     alignItems: "flex-end",
   },
-  companyName: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 4,
-  },
-  companyDetails: {
-    fontSize: 10,
-    color: "#666",
-  },
-  invoiceTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 8,
-  },
-  invoiceNumber: {
-    fontSize: 12,
-    color: "#666",
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 10,
-    fontWeight: "bold",
-    color: "#666",
-    textTransform: "uppercase",
-    marginBottom: 8,
-    letterSpacing: 0.5,
-  },
-  customerName: {
-    fontSize: 13,
-    fontWeight: "bold",
-    marginBottom: 4,
-  },
-  customerDetails: {
-    fontSize: 10,
-    lineHeight: 1.5,
-  },
-  datesRow: {
-    flexDirection: "row",
-    gap: 40,
-  },
-  dateItem: {
-    flex: 1,
-  },
-  dateLabel: {
-    fontSize: 10,
-    color: "#666",
-    marginBottom: 4,
-  },
-  dateValue: {
+  sectionLabel: {
     fontSize: 11,
     fontWeight: "bold",
+    color: "#111827",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  sectionValue: {
+    fontSize: 12,
+    color: "#111827",
+  },
+  // Section 4: Table
+  tableSection: {
+    paddingHorizontal: 32,
+    paddingVertical: 16,
   },
   table: {
-    marginTop: 16,
+    width: "100%",
+    borderCollapse: "collapse",
   },
   tableHeader: {
     flexDirection: "row",
+    borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderBottomColor: "#ddd",
-    paddingBottom: 8,
-    marginBottom: 8,
+    borderColor: "#9CA3AF",
+    paddingVertical: 10,
+  },
+  tableHeaderCell: {
+    fontSize: 11,
+    fontWeight: "bold",
+    color: "#111827",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   tableRow: {
     flexDirection: "row",
-    paddingVertical: 6,
-  },
-  tableRowEven: {
-    backgroundColor: "#f9f9f9",
-  },
-  colDescription: {
-    flex: 3,
-  },
-  colQuantity: {
-    flex: 1,
-    textAlign: "center",
-  },
-  colUnitPrice: {
-    flex: 1.5,
-    textAlign: "right",
-  },
-  colAmount: {
-    flex: 1.5,
-    textAlign: "right",
-  },
-  tableHeaderText: {
-    fontSize: 9,
-    fontWeight: "bold",
-    color: "#666",
-    textTransform: "uppercase",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
   },
   tableCell: {
-    fontSize: 10,
+    fontSize: 11,
+    color: "#111827",
   },
-  totals: {
-    marginTop: 24,
+  colDate: {
+    width: "25%",
+    paddingHorizontal: 8,
+  },
+  colDescription: {
+    flex: 1,
+    paddingHorizontal: 8,
+  },
+  colAmount: {
+    width: "25%",
+    paddingHorizontal: 8,
+    textAlign: "right",
+  },
+  // Section 5: Totals
+  totalsSection: {
+    paddingHorizontal: 32,
+    paddingVertical: 16,
     alignItems: "flex-end",
-    borderTopWidth: 1,
-    borderTopColor: "#ddd",
-    paddingTop: 16,
+  },
+  totalsContainer: {
+    width: 250,
   },
   totalRow: {
     flexDirection: "row",
-    marginBottom: 4,
-    minWidth: 200,
     justifyContent: "space-between",
+    marginBottom: 6,
   },
   totalLabel: {
-    fontSize: 10,
-    color: "#666",
+    fontSize: 11,
+    color: "#111827",
+    fontWeight: "medium",
   },
   totalValue: {
-    fontSize: 10,
-    width: 100,
-    textAlign: "right",
+    fontSize: 11,
+    color: "#111827",
   },
-  grandTotalRow: {
+  finalTotalRow: {
     flexDirection: "row",
+    justifyContent: "space-between",
     marginTop: 8,
     paddingTop: 8,
-    borderTopWidth: 2,
-    borderTopColor: "#333",
-    minWidth: 200,
-    justifyContent: "space-between",
+    borderTopWidth: 1,
+    borderTopColor: "#9CA3AF",
   },
-  grandTotalLabel: {
+  finalTotalLabel: {
     fontSize: 12,
     fontWeight: "bold",
+    color: "#111827",
   },
-  grandTotalValue: {
+  finalTotalValue: {
     fontSize: 12,
     fontWeight: "bold",
-    width: 100,
-    textAlign: "right",
+    color: "#111827",
   },
-  notes: {
-    marginTop: 40,
-    padding: 16,
-    backgroundColor: "#f5f5f5",
-    borderRadius: 4,
+  // Section 6: Mode of Payment
+  paymentSection: {
+    paddingHorizontal: 32,
+    paddingVertical: 16,
   },
-  notesTitle: {
-    fontSize: 10,
+  paymentLabel: {
+    fontSize: 11,
     fontWeight: "bold",
+    color: "#111827",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+  paymentRow: {
+    flexDirection: "row",
     marginBottom: 4,
   },
-  notesText: {
-    fontSize: 10,
-    lineHeight: 1.5,
+  paymentRowLabel: {
+    fontSize: 11,
+    fontWeight: "bold",
+    color: "#111827",
+    width: 120,
   },
-  footer: {
+  paymentRowValue: {
+    fontSize: 11,
+    color: "#111827",
+  },
+  // Section 7: Signatures
+  signaturesSection: {
+    paddingHorizontal: 32,
+    paddingVertical: 24,
+    flexDirection: "row",
+    gap: 32,
+  },
+  signatureBlock: {
+    flex: 1,
+    maxWidth: 250,
+  },
+  signatureLabel: {
+    fontSize: 11,
+    fontWeight: "bold",
+    color: "#111827",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  signatureImageContainer: {
+    height: 48,
+    marginBottom: -16,
+  },
+  signatureImage: {
+    height: 48,
+    width: 150,
+    objectFit: "contain",
+  },
+  signatureName: {
+    fontSize: 11,
+    fontWeight: "bold",
+    color: "#111827",
+    borderBottomWidth: 1,
+    borderBottomColor: "#111827",
+    paddingBottom: 4,
+    marginBottom: 4,
+  },
+  signaturePosition: {
+    fontSize: 10,
+    color: "#4B5563",
+  },
+  // Section 8: Footer
+  footerSection: {
     position: "absolute",
-    bottom: 30,
-    left: 40,
-    right: 40,
-    textAlign: "center",
-    fontSize: 9,
-    color: "#999",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 32,
+    paddingTop: 24,
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  footerText: {
+    fontSize: 10,
+    color: "#374151",
+  },
+  footerCenter: {
+    fontSize: 10,
+    color: "#374151",
   },
 });
 
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(amount);
+function formatCurrency(value: number): string {
+  return `PHP ${value.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  return date.toLocaleDateString("en-US", {
+function formatDate(dateString: string): string {
+  return new Date(dateString).toLocaleDateString("en-PH", {
     year: "numeric",
     month: "long",
     day: "numeric",
@@ -238,123 +306,154 @@ function formatDate(dateStr: string): string {
 }
 
 interface InvoicePDFProps {
-  data: InvoiceData;
+  data: InvoicePDFData;
 }
 
 function InvoicePDF({ data }: InvoicePDFProps) {
+  const hasBankAccount = data.bank_account && (
+    data.bank_account.name ||
+    data.bank_account.bank_name ||
+    data.bank_account.account_number
+  );
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.companyName}>{data.company.name}</Text>
-            {data.company.address && (
-              <Text style={styles.companyDetails}>{data.company.address}</Text>
-            )}
-            {data.company.email && (
-              <Text style={styles.companyDetails}>{data.company.email}</Text>
-            )}
+        {/* Section 1: Company Logo */}
+        <View style={styles.logoSection}>
+          {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf Image has no alt prop */}
+          <Image src={LOGO_URL} style={styles.logo} />
+          <Text style={styles.companyAddress}>Alim St., Kidapawan City</Text>
+        </View>
+
+        {/* Section 2: BILLING INVOICE Title */}
+        <View style={styles.titleSection}>
+          <Text style={styles.title}>BILLING INVOICE</Text>
+        </View>
+
+        {/* Section 3: Bill To and Invoice Number */}
+        <View style={styles.headerSection}>
+          <View style={styles.billToSection}>
+            <Text style={styles.sectionLabel}>Bill To:</Text>
+            <Text style={styles.sectionValue}>{data.client_name || "-"}</Text>
           </View>
-          <View style={styles.headerRight}>
-            <Text style={styles.invoiceTitle}>INVOICE</Text>
-            <Text style={styles.invoiceNumber}>#{data.number}</Text>
+          <View style={styles.invoiceNumberSection}>
+            <Text style={styles.sectionLabel}>Invoice Number:</Text>
+            <Text style={styles.sectionValue}>{data.invoice_number}</Text>
           </View>
         </View>
 
-        {/* Customer */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Bill To</Text>
-          <Text style={styles.customerName}>{data.customer.name}</Text>
-          <View style={styles.customerDetails}>
-            <Text>{data.customer.email}</Text>
-            {data.customer.address && <Text>{data.customer.address}</Text>}
-          </View>
-        </View>
-
-        {/* Dates */}
-        <View style={[styles.section, styles.datesRow]}>
-          <View style={styles.dateItem}>
-            <Text style={styles.dateLabel}>Invoice Date</Text>
-            <Text style={styles.dateValue}>{formatDate(data.date)}</Text>
-          </View>
-          <View style={styles.dateItem}>
-            <Text style={styles.dateLabel}>Due Date</Text>
-            <Text style={styles.dateValue}>{formatDate(data.due_date)}</Text>
-          </View>
-        </View>
-
-        {/* Items Table */}
-        <View style={styles.table}>
+        {/* Section 4: Line Items Table */}
+        <View style={styles.tableSection}>
           <View style={styles.tableHeader}>
-            <Text style={[styles.tableHeaderText, styles.colDescription]}>
-              Description
-            </Text>
-            <Text style={[styles.tableHeaderText, styles.colQuantity]}>Qty</Text>
-            <Text style={[styles.tableHeaderText, styles.colUnitPrice]}>
-              Unit Price
-            </Text>
-            <Text style={[styles.tableHeaderText, styles.colAmount]}>Amount</Text>
+            <Text style={[styles.tableHeaderCell, styles.colDate]}>Date</Text>
+            <Text style={[styles.tableHeaderCell, styles.colDescription]}>Description</Text>
+            <Text style={[styles.tableHeaderCell, styles.colAmount]}>Amount</Text>
           </View>
-
           {data.items.map((item, index) => (
-            <View
-              key={index}
-              style={[
-                styles.tableRow,
-                index % 2 === 1 && styles.tableRowEven,
-              ]}
-            >
-              <Text style={[styles.tableCell, styles.colDescription]}>
-                {item.description}
-              </Text>
-              <Text style={[styles.tableCell, styles.colQuantity]}>
-                {item.quantity}
-              </Text>
-              <Text style={[styles.tableCell, styles.colUnitPrice]}>
-                {formatCurrency(item.unit_price)}
-              </Text>
-              <Text style={[styles.tableCell, styles.colAmount]}>
-                {formatCurrency(item.amount)}
-              </Text>
+            <View key={item.id || index} style={styles.tableRow}>
+              <Text style={[styles.tableCell, styles.colDate]}>{formatDate(data.date)}</Text>
+              <Text style={[styles.tableCell, styles.colDescription]}>{item.description}</Text>
+              <Text style={[styles.tableCell, styles.colAmount]}>{formatCurrency(item.amount)}</Text>
             </View>
           ))}
         </View>
 
-        {/* Totals */}
-        <View style={styles.totals}>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Subtotal</Text>
-            <Text style={styles.totalValue}>{formatCurrency(data.subtotal)}</Text>
-          </View>
-          {data.discount !== undefined && data.discount > 0 && (
+        {/* Section 5: Totals */}
+        <View style={styles.totalsSection}>
+          <View style={styles.totalsContainer}>
             <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Discount</Text>
-              <Text style={styles.totalValue}>-{formatCurrency(data.discount)}</Text>
+              <Text style={styles.totalLabel}>Grand Total</Text>
+              <Text style={styles.totalValue}>{formatCurrency(data.grand_total)}</Text>
             </View>
-          )}
-          <View style={styles.grandTotalRow}>
-            <Text style={styles.grandTotalLabel}>Amount Due</Text>
-            <Text style={styles.grandTotalValue}>{formatCurrency(data.total)}</Text>
+            {data.discount > 0 && (
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Discount</Text>
+                <Text style={styles.totalValue}>-{formatCurrency(data.discount)}</Text>
+              </View>
+            )}
+            <View style={styles.finalTotalRow}>
+              <Text style={styles.finalTotalLabel}>Total</Text>
+              <Text style={styles.finalTotalValue}>{formatCurrency(data.amount_due)}</Text>
+            </View>
           </View>
         </View>
 
-        {/* Notes */}
-        {data.notes && (
-          <View style={styles.notes}>
-            <Text style={styles.notesTitle}>Notes</Text>
-            <Text style={styles.notesText}>{data.notes}</Text>
+        {/* Section 6: Mode of Payment */}
+        {hasBankAccount && (
+          <View style={styles.paymentSection}>
+            <Text style={styles.paymentLabel}>Mode of Payment</Text>
+            {data.bank_account?.name && (
+              <View style={styles.paymentRow}>
+                <Text style={styles.paymentRowLabel}>Account Name:</Text>
+                <Text style={styles.paymentRowValue}>{data.bank_account.name}</Text>
+              </View>
+            )}
+            {data.bank_account?.bank_name && (
+              <View style={styles.paymentRow}>
+                <Text style={styles.paymentRowLabel}>Bank Name:</Text>
+                <Text style={styles.paymentRowValue}>{data.bank_account.bank_name}</Text>
+              </View>
+            )}
+            {data.bank_account?.account_number && (
+              <View style={styles.paymentRow}>
+                <Text style={styles.paymentRowLabel}>Account Number:</Text>
+                <Text style={styles.paymentRowValue}>{data.bank_account.account_number}</Text>
+              </View>
+            )}
           </View>
         )}
 
-        {/* Footer */}
-        <Text style={styles.footer}>
-          Thank you for your business!
-        </Text>
+        {/* Section 7: Prepared By and Approved By */}
+        <View style={styles.signaturesSection}>
+          <View style={styles.signatureBlock}>
+            <Text style={styles.signatureLabel}>Prepared by:</Text>
+            {data.prepared_by_signature?.signature_image && (
+              <View style={styles.signatureImageContainer}>
+                {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf Image has no alt prop */}
+                <Image
+                  src={data.prepared_by_signature.signature_image}
+                  style={styles.signatureImage}
+                />
+              </View>
+            )}
+            <Text style={styles.signatureName}>
+              {data.prepared_by?.full_name || data.prepared_by?.email || "-"}
+            </Text>
+            {data.prepared_by?.position && (
+              <Text style={styles.signaturePosition}>{data.prepared_by.position}</Text>
+            )}
+          </View>
+          <View style={styles.signatureBlock}>
+            <Text style={styles.signatureLabel}>Approved by:</Text>
+            {data.approved_by_signature?.signature_image && (
+              <View style={styles.signatureImageContainer}>
+                {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf Image has no alt prop */}
+                <Image
+                  src={data.approved_by_signature.signature_image}
+                  style={styles.signatureImage}
+                />
+              </View>
+            )}
+            <Text style={styles.signatureName}>
+              {data.approved_by?.full_name || data.approved_by?.email || "-"}
+            </Text>
+            {data.approved_by?.position && (
+              <Text style={styles.signaturePosition}>{data.approved_by.position}</Text>
+            )}
+          </View>
+        </View>
+
+        {/* Section 8: Footer */}
+        <View style={styles.footerSection}>
+          <Text style={styles.footerText}>0910-027-7571 // 0966-167-4592</Text>
+          <Text style={styles.footerCenter}>scholarlyconsulting.co</Text>
+          <Text style={styles.footerText}>info@scholarlyconsulting.co</Text>
+        </View>
       </Page>
     </Document>
   );
 }
 
 export { InvoicePDF };
-export type { InvoiceData, InvoiceItem };
+export type { InvoicePDFData, LineItem, BankAccount, SignatureData, SignatureImage };

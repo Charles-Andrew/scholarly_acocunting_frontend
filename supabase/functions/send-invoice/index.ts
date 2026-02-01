@@ -2,7 +2,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { renderToBuffer } from "npm:@react-pdf/renderer@3.4.0";
 import { Resend } from "npm:resend@3.2.0";
 import React from "npm:react@18.2.0";
-import { InvoicePDF, type InvoiceData } from "./pdf.tsx";
+import { InvoicePDF, type InvoicePDFData } from "./pdf.tsx";
 import { DEFAULT_TEMPLATE, renderTemplate } from "./template.ts";
 
 // CORS headers for browser requests
@@ -30,14 +30,35 @@ interface BillingInvoiceFromDB {
   grand_total: number;
   status: string;
   sent_to_client_at: string | null;
+  bank_account_id: string | null;
+  prepared_by: string | null;
+  approved_by: string | null;
   client: {
     name: string;
     email: string | null;
   } | null;
   items: Array<{
+    id?: string;
     description: string;
     amount: number;
   }>;
+}
+
+interface BankAccountFromDB {
+  name: string;
+  bank_name: string;
+  account_number: string;
+}
+
+interface ProfileFromDB {
+  full_name: string | null;
+  email: string | null;
+  position: string | null;
+}
+
+interface SignatureFromDB {
+  signature_image: string;
+  signed_at: string;
 }
 
 Deno.serve(async (req) => {
@@ -132,8 +153,11 @@ Deno.serve(async (req) => {
         grand_total,
         status,
         sent_to_client_at,
+        bank_account_id,
+        prepared_by,
+        approved_by,
         client:clients(name, email),
-        items:billing_invoice_items(description, amount)
+        items:billing_invoice_items(id, description, amount)
       `)
       .eq("id", invoice_id)
       .eq("created_by", user.id)
@@ -157,31 +181,129 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Calculate due date (30 days from invoice date for billing invoices)
-    const invoiceDate = new Date(invoiceData.date);
-    const dueDate = new Date(invoiceDate);
-    dueDate.setDate(dueDate.getDate() + 30);
+    // Fetch bank account if set
+    let bankAccount: BankAccountFromDB | null = null;
+    if (invoiceData.bank_account_id) {
+      const { data: bankData, error: bankError } = await supabase
+        .from("bank_accounts")
+        .select("name, bank_name, account_number")
+        .eq("id", invoiceData.bank_account_id)
+        .single();
+
+      if (!bankError && bankData) {
+        bankAccount = bankData;
+      }
+    }
+
+    // Fetch prepared_by profile from user_profiles table
+    let preparedByProfile: ProfileFromDB | null = null;
+    if (invoiceData.prepared_by) {
+      const { data: profileData, error: profileError } = await supabase
+        .from("user_profiles")
+        .select("full_name, email, position")
+        .eq("id", invoiceData.prepared_by)
+        .single();
+
+      if (!profileError && profileData) {
+        preparedByProfile = profileData;
+      }
+
+      // If no user_profiles record, try to get email from auth.users
+      if (!preparedByProfile) {
+        const { data: userData } = await supabase.auth.admin.getUserById(
+          invoiceData.prepared_by,
+        );
+        if (userData?.user) {
+          preparedByProfile = {
+            full_name: userData.user.user_metadata?.full_name || null,
+            email: userData.user.email || null,
+            position: userData.user.user_metadata?.position || null,
+          };
+        }
+      }
+    }
+
+    // Fetch approved_by profile from user_profiles table
+    let approvedByProfile: ProfileFromDB | null = null;
+    if (invoiceData.approved_by) {
+      const { data: profileData, error: profileError } = await supabase
+        .from("user_profiles")
+        .select("full_name, email, position")
+        .eq("id", invoiceData.approved_by)
+        .single();
+
+      if (!profileError && profileData) {
+        approvedByProfile = profileData;
+      }
+
+      // If no user_profiles record, try to get email from auth.users
+      if (!approvedByProfile) {
+        const { data: userData } = await supabase.auth.admin.getUserById(
+          invoiceData.approved_by,
+        );
+        if (userData?.user) {
+          approvedByProfile = {
+            full_name: userData.user.user_metadata?.full_name || null,
+            email: userData.user.email || null,
+            position: userData.user.user_metadata?.position || null,
+          };
+        }
+      }
+    }
+
+    // Fetch prepared_by signature
+    let preparedBySignature: SignatureFromDB | null = null;
+    if (invoiceData.prepared_by) {
+      const { data: sigData, error: sigError } = await supabase
+        .from("invoice_signatures")
+        .select("signature_image, signed_at")
+        .eq("invoice_id", invoice_id)
+        .eq("signature_type", "prepared_by")
+        .single();
+
+      if (!sigError && sigData) {
+        preparedBySignature = sigData;
+      }
+    }
+
+    // Fetch approved_by signature
+    let approvedBySignature: SignatureFromDB | null = null;
+    if (invoiceData.approved_by) {
+      const { data: sigData, error: sigError } = await supabase
+        .from("invoice_signatures")
+        .select("signature_image, signed_at")
+        .eq("invoice_id", invoice_id)
+        .eq("signature_type", "approved_by")
+        .single();
+
+      if (!sigError && sigData) {
+        approvedBySignature = sigData;
+      }
+    }
 
     // Build invoice data for PDF
-    const pdfData: InvoiceData = {
-      number: invoiceData.invoice_number,
+    const pdfData: InvoicePDFData = {
+      invoice_number: invoiceData.invoice_number,
       date: invoiceData.date,
-      due_date: dueDate.toISOString().split("T")[0],
-      customer: {
-        name: invoiceData.client.name,
-        email: invoiceData.client.email || to,
-      },
-      company: {
-        name: "Scholarly Accounting",
-      },
-      items: (invoiceData.items || []).map((item) => ({
-        description: item.description,
-        quantity: 1,
-        unit_price: item.amount,
-        amount: item.amount,
-      })),
-      subtotal: invoiceData.grand_total,
-      total: invoiceData.amount_due,
+      amount_due: invoiceData.amount_due,
+      discount: invoiceData.discount,
+      grand_total: invoiceData.grand_total,
+      client_name: invoiceData.client.name,
+      client_email: invoiceData.client.email || undefined,
+      items: invoiceData.items || [],
+      bank_account: bankAccount || undefined,
+      prepared_by: preparedByProfile ? {
+        full_name: preparedByProfile.full_name || undefined,
+        email: preparedByProfile.email || undefined,
+        position: preparedByProfile.position || undefined,
+      } : undefined,
+      approved_by: approvedByProfile ? {
+        full_name: approvedByProfile.full_name || undefined,
+        email: approvedByProfile.email || undefined,
+        position: approvedByProfile.position || undefined,
+      } : undefined,
+      prepared_by_signature: preparedBySignature || undefined,
+      approved_by_signature: approvedBySignature || undefined,
     };
 
     // Generate PDF
@@ -199,17 +321,22 @@ Deno.serve(async (req) => {
 
     // Prepare template variables
     const formatCurrency = (amount: number) =>
-      new Intl.NumberFormat("en-US", {
+      new Intl.NumberFormat("en-PH", {
         style: "currency",
-        currency: "USD",
+        currency: "PHP",
       }).format(amount);
 
     const formatDate = (dateStr: string) =>
-      new Date(dateStr).toLocaleDateString("en-US", {
+      new Date(dateStr).toLocaleDateString("en-PH", {
         year: "numeric",
         month: "long",
         day: "numeric",
       });
+
+    // Calculate due date (30 days from invoice date for billing invoices)
+    const invoiceDate = new Date(invoiceData.date);
+    const dueDate = new Date(invoiceDate);
+    dueDate.setDate(dueDate.getDate() + 30);
 
     const templateVars = {
       invoice_number: invoiceData.invoice_number,

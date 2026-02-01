@@ -4,7 +4,7 @@ import * as React from "react"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
-import { ArrowLeft, Printer, CheckCircle2, Send, Signature, X } from "lucide-react"
+import { ArrowLeft, CheckCircle2, Send, Signature, X } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -184,10 +184,6 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
     }
   }
 
-  const handlePrint = () => {
-    window.print()
-  }
-
   const handleToggleSignature = async (signatureType: "prepared_by" | "approved_by") => {
     const hasSignature = signatureType === "prepared_by" ? preparedBySignature : approvedBySignature
 
@@ -339,25 +335,23 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
               </Button>
             )}
           {invoice.status === "approved" && (
-            <Button variant="default" onClick={handleSendToClient}>
-              <Send className="mr-2 h-4 w-4" />
-              Send to Client
-            </Button>
+            <div className="flex flex-col items-end gap-1">
+              <Button variant="default" onClick={handleSendToClient}>
+                <Send className="mr-2 h-4 w-4" />
+                Send to Client
+              </Button>
+              {invoice.sent_to_client_at && (
+                <span className="text-sm text-muted-foreground">
+                  Last sent: {formatDate(invoice.sent_to_client_at)}
+                </span>
+              )}
+            </div>
           )}
-          {invoice.sent_to_client_at && (
-            <span className="text-sm text-muted-foreground">
-              Last sent: {formatDate(invoice.sent_to_client_at)}
-            </span>
-          )}
-          <Button variant="outline" onClick={handlePrint}>
-            <Printer className="mr-2 h-4 w-4" />
-            Print
-          </Button>
         </div>
       </div>
 
       {/* Invoice Document */}
-      <div className="border rounded-lg overflow-hidden bg-white" id="invoice-print">
+      <div className="border rounded-lg overflow-hidden bg-white">
         {/* Section 1: Company Logo */}
         <div className="p-8 flex flex-col items-center justify-center">
           <div className="relative h-20 w-[180px]">
@@ -566,30 +560,17 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
         </div>
       </div>
 
-      {/* Print Styles */}
-      <style>{`
-        @media print {
-          body * {
-            visibility: hidden;
-          }
-          #invoice-print, #invoice-print * {
-            visibility: visible;
-          }
-          #invoice-print {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-          }
-        }
-      `}</style>
-
       {/* Send Email Dialog */}
       <SendEmailDialog
         invoice={invoice}
         lineItems={lineItems}
         clientEmail={client?.email || ""}
         clientName={client?.name || ""}
+        bankAccount={bankAccount}
+        preparedBy={preparedBy}
+        approvedBy={approvedBy}
+        preparedBySignature={preparedBySignature}
+        approvedBySignature={approvedBySignature}
         open={isSendDialogOpen}
         onOpenChange={setIsSendDialogOpen}
         onSent={handleEmailSent}

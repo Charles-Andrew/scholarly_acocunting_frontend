@@ -20,12 +20,18 @@ import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/hooks/use-toast"
 import type { Invoice, LineItem } from "@/lib/types/invoice"
 import { InvoicePDFDocument } from "./InvoicePDF"
+import type { BankAccount } from "@/lib/types/bank-account"
 
 interface SendEmailDialogProps {
   invoice: Invoice | null
   lineItems: LineItem[]
   clientEmail?: string
   clientName?: string
+  bankAccount?: BankAccount | null
+  preparedBy?: { full_name?: string; email?: string; position?: string } | null
+  approvedBy?: { full_name?: string; email?: string; position?: string } | null
+  preparedBySignature?: { signature_image: string; signed_at: string } | null
+  approvedBySignature?: { signature_image: string; signed_at: string } | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onSent?: () => void
@@ -64,8 +70,6 @@ const DEFAULT_BODY_HTML = `<!DOCTYPE html>
       <strong>Amount Due:</strong> <span class="amount">{{amount_due}}</span><br>
       <strong>Due Date:</strong> {{due_date}}
     </p>
-
-    <a href="{{payment_link}}" class="button">Pay Now</a>
 
     <p>Questions about this invoice? Simply reply to this email.</p>
 
@@ -115,6 +119,11 @@ export function SendEmailDialog({
   lineItems,
   clientEmail = "",
   clientName = "",
+  bankAccount = null,
+  preparedBy = null,
+  approvedBy = null,
+  preparedBySignature = null,
+  approvedBySignature = null,
   open,
   onOpenChange,
   onSent,
@@ -180,22 +189,43 @@ export function SendEmailDialog({
     setIsSending(true)
 
     try {
+      // Get the current session to pass the JWT token
+      const { data: sessionData } = await supabase.auth.getSession()
+      const accessToken = sessionData.session?.access_token
+
+      if (!accessToken) {
+        throw new Error("Not authenticated. Please sign in again.")
+      }
+
+      console.log("Got access token:", accessToken.substring(0, 20) + "...")
+
       const vars = getTemplateVariables()
       const renderedSubject = renderTemplate(subject, vars)
       const renderedBody = renderTemplate(bodyHtml, vars)
 
-      const { data, error } = await supabase.functions.invoke("send-invoice", {
-        body: {
+      // Use fetch directly to have full control over headers
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const response = await fetch(`${supabaseUrl}/functions/v1/send-invoice`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
           invoice_id: invoice.id,
           to: to.trim(),
           from: from.trim() || DEFAULT_FROM,
           reply_to: replyTo.trim() || DEFAULT_REPLY_TO,
           subject: renderedSubject,
           body_html: renderedBody,
-        },
+        }),
       })
 
+      const data = await response.json()
+      const error = response.ok ? null : { message: data.error || `HTTP ${response.status}` }
+
       if (error) {
+        console.error("Edge Function error response:", data)
         throw new Error(error.message || "Failed to send email")
       }
 
@@ -233,6 +263,11 @@ export function SendEmailDialog({
     client_name: clientName,
     client_email: clientEmail,
     items: lineItems,
+    bank_account: bankAccount,
+    prepared_by: preparedBy,
+    approved_by: approvedBy,
+    prepared_by_signature: preparedBySignature,
+    approved_by_signature: approvedBySignature,
   }
 
   return (
