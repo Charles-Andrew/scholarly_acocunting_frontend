@@ -18,34 +18,34 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  // Fetch the invoice
-  const { data: invoice, error: fetchError } = await supabase
+  // Fetch the billing invoice
+  const { data: billingInvoice, error: fetchError } = await supabase
     .from("billing_invoices")
     .select("approved_by, status")
     .eq("id", resolvedParams.id)
     .single()
 
-  if (fetchError || !invoice) {
-    return NextResponse.json({ error: "Invoice not found" }, { status: 404 })
+  if (fetchError || !billingInvoice) {
+    return NextResponse.json({ error: "Billing invoice not found" }, { status: 404 })
   }
 
   // Check authorization: only the assigned approver can approve
-  if (invoice.approved_by !== user.id) {
+  if (billingInvoice.approved_by !== user.id) {
     return NextResponse.json(
-      { error: "You are not authorized to approve this invoice" },
+      { error: "You are not authorized to approve this billing invoice" },
       { status: 403 }
     )
   }
 
   // Check status: only invoices with "for_approval" status can be approved
-  if (invoice.status !== "for_approval") {
+  if (billingInvoice.status !== "for_approval") {
     return NextResponse.json(
-      { error: "Invoice is not pending approval" },
+      { error: "Billing invoice is not pending approval" },
       { status: 400 }
     )
   }
 
-  // Approve the invoice
+  // Approve the billing invoice
   const { error: updateError } = await supabase
     .from("billing_invoices")
     .update({
@@ -55,10 +55,10 @@ export async function POST(
 
   if (updateError) {
     return NextResponse.json(
-      { error: "Failed to approve invoice" },
+      { error: "Failed to approve billing invoice" },
       { status: 500 }
     )
   }
 
-  return NextResponse.json({ success: true, message: "Invoice approved successfully" })
+  return NextResponse.json({ success: true, message: "Billing invoice approved successfully" })
 }

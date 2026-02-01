@@ -432,7 +432,7 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
         <div className="px-8 py-4">
           <div className="grid grid-cols-2 gap-8">
             <div>
-              <p className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-1">Pay To:</p>
+              <p className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-1">To:</p>
               <p className="text-base text-gray-900">{voucher.recipient?.full_name || voucher.recipient?.email || "N/A"}</p>
             </div>
             <div className="text-right">

@@ -31,6 +31,7 @@ import { toast } from "@/hooks/use-toast"
 
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
+  email: z.string().email("Valid email is required"),
   accounts_receivable_code: z.string(),
 })
 
@@ -49,6 +50,7 @@ export function AddClientModal({ onClientAdded }: AddClientModalProps) {
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
+      email: "",
       accounts_receivable_code: "",
     },
   })
@@ -70,6 +72,7 @@ export function AddClientModal({ onClientAdded }: AddClientModalProps) {
     try {
       const { error } = await supabase.from("clients").insert({
         name: values.name,
+        email: values.email,
         accounts_receivable_code: values.accounts_receivable_code,
       })
 
@@ -123,6 +126,19 @@ export function AddClientModal({ onClientAdded }: AddClientModalProps) {
                   <FormLabel>Name</FormLabel>
                   <FormControl>
                     <Input placeholder="Client name" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email</FormLabel>
+                  <FormControl>
+                    <Input placeholder="client@example.com" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

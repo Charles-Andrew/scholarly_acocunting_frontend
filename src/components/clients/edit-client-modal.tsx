@@ -33,6 +33,7 @@ import { toast } from "@/hooks/use-toast"
 const formSchema = z.object({
   id: z.string(),
   name: z.string().min(1, "Name is required"),
+  email: z.string().email("Valid email is required"),
   accounts_receivable_code: z.string(),
 })
 
@@ -54,6 +55,7 @@ export function EditClientModal({ client, onClientUpdated, children }: EditClien
     defaultValues: {
       id: client.id,
       name: client.name,
+      email: client.email,
       accounts_receivable_code: client.accounts_receivable_code || "",
     },
   })
@@ -77,6 +79,7 @@ export function EditClientModal({ client, onClientUpdated, children }: EditClien
         .from("clients")
         .update({
           name: values.name,
+          email: values.email,
           accounts_receivable_code: values.accounts_receivable_code,
         })
         .eq("id", values.id)
@@ -142,6 +145,19 @@ export function EditClientModal({ client, onClientUpdated, children }: EditClien
                   <FormLabel>Name</FormLabel>
                   <FormControl>
                     <Input placeholder="Client name" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email</FormLabel>
+                  <FormControl>
+                    <Input placeholder="client@example.com" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

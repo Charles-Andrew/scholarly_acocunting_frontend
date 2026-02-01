@@ -6,10 +6,11 @@ import type { Client } from "@/lib/types"
 export default async function ClientsPage() {
   const supabase = await createClient()
 
-  // Fetch data on the server
+  // Fetch data on the server (RLS filters out soft-deleted records)
   const { data: clients, error } = await supabase
     .from("clients")
     .select("*")
+    .is("deleted_at", null)
     .order("name", { ascending: true })
 
   if (error) {

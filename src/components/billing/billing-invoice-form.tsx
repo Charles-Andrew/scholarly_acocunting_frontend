@@ -58,10 +58,10 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
 
   const fetchData = useCallback(async () => {
     const [clientsData, categoriesData, bankData, usersData, currentUserData] = await Promise.all([
-      supabase.from("clients").select("id, name, accounts_receivable_code, created_at, updated_at").order("name"),
-      supabase.from("income_categories").select("id, name, slug, created_at, updated_at").order("name"),
-      supabase.from("bank_accounts").select("id, name, bank_name, account_number, created_at, updated_at"),
-      supabase.from("user_profiles").select("id, email, full_name"),
+      supabase.from("clients").select("id, name, email, accounts_receivable_code, created_at, updated_at").is("deleted_at", null).order("name"),
+      supabase.from("income_categories").select("id, name, slug, created_at, updated_at").is("deleted_at", null).order("name"),
+      supabase.from("bank_accounts").select("id, name, bank_name, account_number, created_at, updated_at").is("deleted_at", null),
+      supabase.from("user_profiles").select("id, email, full_name").is("deleted_at", null),
       supabase.auth.getUser(),
     ])
 

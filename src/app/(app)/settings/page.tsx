@@ -78,6 +78,7 @@ export default function SettingsPage() {
       const { data, error } = await supabase
         .from("bank_accounts")
         .select("*")
+        .is("deleted_at", null)
         .order("name", { ascending: true })
 
       if (error) {
@@ -97,6 +98,7 @@ export default function SettingsPage() {
       const { data, error } = await supabase
         .from("user_profiles")
         .select("*")
+        .is("deleted_at", null)
         .order("full_name", { ascending: true })
 
       if (error) {
