@@ -10,8 +10,9 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "@/hooks/use-toast"
 import type { Invoice, LineItem, BillingInvoiceUser } from "@/lib/types/invoice"
-import type { Client, IncomeCategory } from "@/lib/types"
+import type { Client } from "@/lib/types"
 import type { BankAccount } from "@/lib/types/bank-account"
+import { SendEmailDialog } from "@/components/invoices/SendEmailDialog"
 
 interface ViewBillingInvoicePageProps {
   params: Promise<{
@@ -28,7 +29,6 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
   const [invoice, setInvoice] = React.useState<Invoice | null>(null)
   const [lineItems, setLineItems] = React.useState<LineItem[]>([])
   const [clients, setClients] = React.useState<Client[]>([])
-  const [incomeCategories, setIncomeCategories] = React.useState<IncomeCategory[]>([])
   const [bankAccounts, setBankAccounts] = React.useState<BankAccount[]>([])
   const [users, setUsers] = React.useState<BillingInvoiceUser[]>([])
   const [isLoading, setIsLoading] = React.useState(true)
@@ -36,6 +36,7 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
   const [preparedBySignature, setPreparedBySignature] = React.useState<{ signature_image: string; signed_at: string } | null>(null)
   const [approvedBySignature, setApprovedBySignature] = React.useState<{ signature_image: string; signed_at: string } | null>(null)
   const [isTogglingSignature, setIsTogglingSignature] = React.useState(false)
+  const [isSendDialogOpen, setIsSendDialogOpen] = React.useState(false)
 
   const fetchData = React.useCallback(async () => {
     try {
@@ -63,9 +64,8 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
       if (itemsError) throw itemsError
 
       // Fetch related data
-      const [clientsData, categoriesData, bankData, usersData] = await Promise.all([
-        supabase.from("clients").select("id, name, accounts_receivable_code, created_at, updated_at").order("name"),
-        supabase.from("income_categories").select("id, name, slug, created_at, updated_at").order("name"),
+      const [clientsData, bankData, usersData] = await Promise.all([
+        supabase.from("clients").select("id, name, email, accounts_receivable_code, created_at, updated_at").order("name"),
         supabase.from("bank_accounts").select("id, name, bank_name, account_number, created_at, updated_at"),
         supabase.from("user_profiles").select("id, email, full_name, position"),
       ])
@@ -79,7 +79,6 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
         }))
       )
       if (clientsData.data) setClients(clientsData.data)
-      if (categoriesData.data) setIncomeCategories(categoriesData.data)
       if (bankData.data) setBankAccounts(bankData.data)
       if (usersData.data) {
         const formattedUsers = usersData.data.map((u) => ({
@@ -139,7 +138,6 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
   }
 
   const client = clients.find((c) => c.id === invoice?.client_id)
-  const incomeCategory = incomeCategories.find((c) => c.id === invoice?.income_category_id)
   const bankAccount = bankAccounts.find((b) => b.id === invoice?.bank_account_id)
   const preparedBy = users.find((u) => u.id === invoice?.prepared_by)
   const approvedBy = users.find((u) => u.id === invoice?.approved_by)
@@ -269,29 +267,13 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
     }
   }
 
-  const handleSendToClient = async () => {
-    try {
-      // Update the sent_to_client_at timestamp
-      const { error: updateError } = await supabase
-        .from("billing_invoices")
-        .update({ sent_to_client_at: new Date().toISOString() })
-        .eq("id", resolvedParams.id)
+  const handleSendToClient = () => {
+    setIsSendDialogOpen(true)
+  }
 
-      if (updateError) throw updateError
-
-      // Refresh the invoice data to update the UI
-      await fetchData()
-
-      toast.success({
-        title: "Invoice Sent",
-        description: `Invoice has been sent to ${client?.name || "client"}.`,
-      })
-    } catch {
-      toast.error({
-        title: "Error",
-        description: "Failed to send invoice to client.",
-      })
-    }
+  const handleEmailSent = () => {
+    // Refresh the invoice data to update the UI (sent_to_client_at timestamp)
+    fetchData()
   }
 
   if (isLoading) {
@@ -601,6 +583,17 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
           }
         }
       `}</style>
+
+      {/* Send Email Dialog */}
+      <SendEmailDialog
+        invoice={invoice}
+        lineItems={lineItems}
+        clientEmail={client?.email || ""}
+        clientName={client?.name || ""}
+        open={isSendDialogOpen}
+        onOpenChange={setIsSendDialogOpen}
+        onSent={handleEmailSent}
+      />
     </div>
   )
 }
