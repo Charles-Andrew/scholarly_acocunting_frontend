@@ -22,7 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import Link from "next/link"
-import { ArrowLeft, Plus, Trash2 } from "lucide-react"
+import { ArrowLeft, Plus, Trash2, Lock } from "lucide-react"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { toast } from "@/hooks/use-toast"
 import type { Invoice, LineItem, BillingInvoiceUser } from "@/lib/types/invoice"
@@ -47,6 +47,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
   ])
   const [isLoading, setIsLoading] = useState(isEditMode)
   const [isSaving, setIsSaving] = useState(false)
+  const [hasJournalEntry, setHasJournalEntry] = useState(false)
 
   const [selectedClientId, setSelectedClientId] = useState<string>("")
   const [selectedIncomeCategoryId, setSelectedIncomeCategoryId] = useState<string>("")
@@ -88,14 +89,21 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
 
     setIsLoading(true)
     try {
-      // Fetch invoice
+      // Fetch invoice with journal entry link check
       const { data: invoiceData, error: invoiceError } = await supabase
         .from("billing_invoices")
-        .select("*")
+        .select(`
+          *,
+          journal_links:account_titles_billing_invoices(id)
+        `)
         .eq("id", invoiceId)
         .single()
 
       if (invoiceError) throw invoiceError
+
+      // Check if linked to journal entry
+      const journalLinkCount = Array.isArray(invoiceData.journal_links) ? invoiceData.journal_links.length : 0
+      setHasJournalEntry(journalLinkCount > 0)
 
       // Fetch line items
       const { data: itemsData, error: itemsError } = await supabase
@@ -349,6 +357,20 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
         )}
       </div>
 
+      {hasJournalEntry && (
+        <div className="rounded-md border border-yellow-200 bg-yellow-50 p-4">
+          <div className="flex items-center gap-3">
+            <Lock className="h-5 w-5 text-yellow-600" />
+            <div>
+              <p className="font-medium text-yellow-800">Posted to General Ledger</p>
+              <p className="text-sm text-yellow-700">
+                This invoice has been posted to the general ledger and cannot be edited.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Invoice Details</CardTitle>
@@ -364,6 +386,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
                 setSelectedIncomeCategoryId("")
                 setDate("")
               }}
+              disabled={hasJournalEntry}
             >
               <SelectTrigger id="client">
                 <SelectValue placeholder="Select a client" />
@@ -393,6 +416,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
                   setSelectedIncomeCategoryId(value)
                   setDate("")
                 }}
+                disabled={hasJournalEntry}
               >
                 <SelectTrigger id="income-category">
                   <SelectValue placeholder="Select an income category" />
@@ -417,6 +441,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
+                disabled={hasJournalEntry}
               />
             </div>
           )}
@@ -426,10 +451,12 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
             <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
               <div className="flex items-center justify-between">
                 <Label>Line Items</Label>
-                <Button variant="outline" size="sm" onClick={addLineItem}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Item
-                </Button>
+                {!hasJournalEntry && (
+                  <Button variant="outline" size="sm" onClick={addLineItem}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Item
+                  </Button>
+                )}
               </div>
 
               <div className="rounded-md border">
@@ -451,6 +478,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
                             onChange={(e) =>
                               updateLineItem(item.id, "description", e.target.value)
                             }
+                            disabled={hasJournalEntry}
                           />
                         </TableCell>
                         <TableCell>
@@ -467,6 +495,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
                                 parseFloat(e.target.value) || 0
                               )
                             }
+                            disabled={hasJournalEntry}
                           />
                         </TableCell>
                         <TableCell>
@@ -474,7 +503,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
                             variant="ghost"
                             size="icon"
                             onClick={() => removeLineItem(item.id)}
-                            disabled={lineItems.length === 1}
+                            disabled={lineItems.length === 1 || hasJournalEntry}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
@@ -503,6 +532,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
                     className="w-32"
                     value={discount || ""}
                     onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+                    disabled={hasJournalEntry}
                   />
                 </div>
                 <div className="text-lg font-bold">
@@ -525,6 +555,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
             <Select
               value={selectedBankAccountId}
               onValueChange={setSelectedBankAccountId}
+              disabled={hasJournalEntry}
             >
               <SelectTrigger id="bank-account">
                 <SelectValue placeholder="Select a bank account" />
@@ -552,6 +583,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
             <Select
               value={approvedById}
               onValueChange={setApprovedById}
+              disabled={hasJournalEntry}
             >
               <SelectTrigger id="approved-by">
                 <SelectValue placeholder="Select a user" />
@@ -570,41 +602,49 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
 
       {/* Action Buttons */}
       <div className="flex justify-end gap-4">
-        {hasUnsavedChanges && !isEditMode ? (
-          <ConfirmDialog
-            trigger={
-              <Button variant="outline" disabled={isSaving}>
-                Cancel
-              </Button>
-            }
-            title="Discard Changes?"
-            description="You have unsaved changes. If you cancel now, all current values will be deleted and won't be saved."
-            confirmText="Discard"
-            onConfirm={() => {
-              window.location.href = "/billing-invoice"
-            }}
-            destructive
-          />
-        ) : (
-          <Button variant="outline" asChild disabled={isSaving}>
-            <Link href="/billing-invoice">Cancel</Link>
+        {hasJournalEntry ? (
+          <Button variant="outline" asChild>
+            <Link href="/billing-invoice">Back to Invoices</Link>
           </Button>
+        ) : (
+          <>
+            {hasUnsavedChanges && !isEditMode ? (
+              <ConfirmDialog
+                trigger={
+                  <Button variant="outline" disabled={isSaving}>
+                    Cancel
+                  </Button>
+                }
+                title="Discard Changes?"
+                description="You have unsaved changes. If you cancel now, all current values will be deleted and won't be saved."
+                confirmText="Discard"
+                onConfirm={() => {
+                  window.location.href = "/billing-invoice"
+                }}
+                destructive
+              />
+            ) : (
+              <Button variant="outline" asChild disabled={isSaving}>
+                <Link href="/billing-invoice">Cancel</Link>
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              onClick={() => saveInvoice("draft")}
+              disabled={isSaving || !canSaveDraft}
+              title={!canSaveDraft ? "Fill in at least one field to save as draft" : ""}
+            >
+              {isSaving ? "Saving..." : "Save as Draft"}
+            </Button>
+            <Button
+              onClick={() => saveInvoice("for_approval")}
+              disabled={isSaving || !canFinalize}
+              title={!canFinalize ? "Fill in all required fields to submit" : ""}
+            >
+              {isSaving ? "Saving..." : "Submit for Approval"}
+            </Button>
+          </>
         )}
-        <Button
-          variant="secondary"
-          onClick={() => saveInvoice("draft")}
-          disabled={isSaving || !canSaveDraft}
-          title={!canSaveDraft ? "Fill in at least one field to save as draft" : ""}
-        >
-          {isSaving ? "Saving..." : "Save as Draft"}
-        </Button>
-        <Button
-          onClick={() => saveInvoice("for_approval")}
-          disabled={isSaving || !canFinalize}
-          title={!canFinalize ? "Fill in all required fields to submit" : ""}
-        >
-          {isSaving ? "Saving..." : "Submit for Approval"}
-        </Button>
       </div>
     </div>
   )

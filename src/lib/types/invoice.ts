@@ -32,6 +32,7 @@ export type Invoice = {
   client_name?: string
   income_category_name?: string
   prepared_by_name?: string
+  has_journal_entry?: boolean
 }
 
 /**

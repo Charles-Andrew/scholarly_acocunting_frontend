@@ -49,7 +49,8 @@ export default function BillingInvoicePage() {
           *,
           clients:client_id (name),
           income_categories:income_category_id (name),
-          prepared_by_user:prepared_by (email, full_name)
+          prepared_by_user:prepared_by (email, full_name),
+          journal_links:account_titles_billing_invoices(id)
         `)
         .order("created_at", { ascending: false })
 
@@ -61,12 +62,13 @@ export default function BillingInvoicePage() {
         return
       }
 
-      // Transform the data to include joined fields
+      // Transform the data to include joined fields and journal entry status
       const formattedData: Invoice[] = (data || []).map((invoice: Record<string, unknown>) => ({
         ...invoice,
         client_name: (invoice.clients as Record<string, unknown>)?.name as string || "",
         income_category_name: (invoice.income_categories as Record<string, unknown>)?.name as string || "",
         prepared_by_name: ((invoice.prepared_by_user as Record<string, unknown>)?.email as string)?.split("@")[0] || "",
+        has_journal_entry: Array.isArray(invoice.journal_links) && invoice.journal_links.length > 0,
       })) as Invoice[]
 
       setInvoices(formattedData)
@@ -88,7 +90,7 @@ export default function BillingInvoicePage() {
         if (error.code === "23503") {
           toast.error({
             title: "Cannot Delete",
-            description: "This invoice has related records and cannot be deleted.",
+            description: "This invoice has been posted to the general ledger and cannot be deleted.",
           })
         } else {
           toast.error({
@@ -191,23 +193,27 @@ export default function BillingInvoicePage() {
                 </Link>
               </Button>
             )}
-            <Button variant="ghost" size="icon" asChild>
-              <Link href={`/billing-invoice/${invoice.id}/edit`}>
-                <Pencil className="h-4 w-4" />
-              </Link>
-            </Button>
-            <ConfirmDialog
-              trigger={
-                <Button variant="ghost" size="icon">
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              }
-              title="Delete Invoice"
-              description="Are you sure you want to delete this invoice? This action cannot be undone."
-              confirmText="Delete"
-              onConfirm={() => handleDeleteInvoice(invoice.id)}
-              destructive
-            />
+            {!invoice.has_journal_entry && (
+              <Button variant="ghost" size="icon" asChild>
+                <Link href={`/billing-invoice/${invoice.id}/edit`}>
+                  <Pencil className="h-4 w-4" />
+                </Link>
+              </Button>
+            )}
+            {!invoice.has_journal_entry && (
+              <ConfirmDialog
+                trigger={
+                  <Button variant="ghost" size="icon">
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                }
+                title="Delete Invoice"
+                description="Are you sure you want to delete this invoice? This action cannot be undone."
+                confirmText="Delete"
+                onConfirm={() => handleDeleteInvoice(invoice.id)}
+                destructive
+              />
+            )}
           </div>
         )
       },
