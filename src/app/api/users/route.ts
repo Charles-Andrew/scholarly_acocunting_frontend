@@ -70,18 +70,23 @@ export async function POST(request: Request) {
     }
 
     // Create the user profile using admin client (bypasses RLS)
-    const { error: profileError } = await adminClient.from("user_profiles").insert({
+    // Note: A database trigger also creates this, so we use upsert to avoid conflicts
+    const { error: profileError } = await adminClient.from("user_profiles").upsert({
       id: authData.user.id,
       email,
       full_name,
       position: position || null,
+    }, {
+      onConflict: "id",
+      ignoreDuplicates: false, // Update if exists (in case trigger already created it)
     })
 
     if (profileError) {
       // Try to delete the auth user since profile creation failed
       await adminClient.auth.admin.deleteUser(authData.user.id)
+      console.error("Profile creation error:", profileError)
       return NextResponse.json(
-        { error: "Failed to create user profile" },
+        { error: "Failed to create user profile please recheck: " + profileError.message },
         { status: 500 }
       )
     }
@@ -263,6 +268,80 @@ export async function PATCH(request: Request) {
     return NextResponse.json({
       success: true,
       message: `User ${is_active ? "enabled" : "disabled"} successfully`,
+    })
+  } catch {
+    return NextResponse.json(
+      { error: "An unexpected error occurred" },
+      { status: 500 }
+    )
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    // Get current user to verify authorization
+    const supabase = await createClient()
+    const {
+      data: { user: currentUser },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !currentUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    // Parse request body
+    const body = await request.json()
+    const { id } = body
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "User ID is required" },
+        { status: 400 }
+      )
+    }
+
+    // Prevent deleting yourself
+    if (id === currentUser.id) {
+      return NextResponse.json(
+        { error: "You cannot delete your own account" },
+        { status: 400 }
+      )
+    }
+
+    // Create admin client with service role key
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      return NextResponse.json(
+        { error: "Server configuration error" },
+        { status: 500 }
+      )
+    }
+
+    const adminClient = createAdminClient(supabaseUrl, serviceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    })
+
+    // Call the database function to handle user deletion with all cleanup
+    const { error: deleteError } = await adminClient.rpc("delete_user", {
+      target_user_id: id,
+    })
+
+    if (deleteError) {
+      return NextResponse.json(
+        { error: "Failed to delete user: " + deleteError.message },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "User deleted successfully",
     })
   } catch {
     return NextResponse.json(

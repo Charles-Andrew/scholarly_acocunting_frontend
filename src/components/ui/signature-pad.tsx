@@ -3,6 +3,7 @@
 import { useRef, useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/client"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 
 interface SignaturePadProps {
   userId: string
@@ -21,6 +22,8 @@ export function SignaturePad({
   const [isDrawing, setIsDrawing] = useState(false)
   const [hasSignature, setHasSignature] = useState(!!initialSignature)
   const [signature, setSignature] = useState<string | null>(initialSignature || null)
+  const [errorDialogOpen, setErrorDialogOpen] = useState(false)
+  const [errorMessage, setErrorMessage] = useState("")
   const supabase = createClient()
 
   useEffect(() => {
@@ -189,7 +192,8 @@ export function SignaturePad({
       setHasSignature(true)
       onSignatureSaved?.()
     } catch {
-      alert("Failed to save signature. Please try again.")
+      setErrorMessage("Failed to save signature. Please try again.")
+      setErrorDialogOpen(true)
     }
   }
 
@@ -205,7 +209,8 @@ export function SignaturePad({
       clearSignature()
       onSignatureSaved?.()
     } catch {
-      alert("Failed to delete signature. Please try again.")
+      setErrorMessage("Failed to delete signature. Please try again.")
+      setErrorDialogOpen(true)
     }
   }
 
@@ -249,6 +254,16 @@ export function SignaturePad({
           )}
         </div>
       )}
+      <ConfirmDialog
+        trigger={null}
+        title="Error"
+        description={errorMessage}
+        confirmText="OK"
+        cancelText=""
+        open={errorDialogOpen}
+        onOpenChange={setErrorDialogOpen}
+        onConfirm={() => setErrorDialogOpen(false)}
+      />
     </div>
   )
 }

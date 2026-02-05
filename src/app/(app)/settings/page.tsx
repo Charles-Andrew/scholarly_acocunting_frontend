@@ -10,7 +10,7 @@ import {
   getPaginationRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { ChevronLeft, ChevronRight, Plus, Edit2, Power, PowerOff, MoreHorizontal } from "lucide-react"
+import { ChevronLeft, ChevronRight, Plus, Edit2, Power, PowerOff, MoreHorizontal, Trash2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 
 import { Button } from "@/components/ui/button"
@@ -41,6 +41,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { SignaturePad } from "@/components/ui/signature-pad"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import type { BankAccount, UserProfile } from "@/lib/types"
 import { toast } from "@/hooks/use-toast"
 
@@ -70,6 +71,22 @@ export default function SettingsPage() {
   const [isToggleDialogOpen, setIsToggleDialogOpen] = React.useState(false)
   const [togglingUser, setTogglingUser] = React.useState<UserProfile | null>(null)
   const [isProcessing, setIsProcessing] = React.useState(false)
+  const [isAddBankOpen, setIsAddBankOpen] = React.useState(false)
+  const [newBankAccount, setNewBankAccount] = React.useState({
+    name: "",
+    bank_name: "",
+    account_number: "",
+  })
+  const [isSubmittingBank, setIsSubmittingBank] = React.useState(false)
+  const [isDeleteBankDialogOpen, setIsDeleteBankDialogOpen] = React.useState(false)
+  const [deletingBankAccount, setDeletingBankAccount] = React.useState<BankAccount | null>(null)
+  const [bankAccountInUse, setBankAccountInUse] = React.useState(false)
+  const [isDeleteUserDialogOpen, setIsDeleteUserDialogOpen] = React.useState(false)
+  const [deletingUser, setDeletingUser] = React.useState<UserProfile | null>(null)
+  const [userInUse, setUserInUse] = React.useState(false)
+  const [userCleanupCount, setUserCleanupCount] = React.useState(0)
+  const [errorDialogOpen, setErrorDialogOpen] = React.useState(false)
+  const [errorMessage, setErrorMessage] = React.useState("")
 
   const supabase = createClient()
 
@@ -154,7 +171,8 @@ export default function SettingsPage() {
       const data = await response.json()
 
       if (!response.ok) {
-        alert("Failed to create user: " + data.error)
+        setErrorMessage("Failed to create user: " + data.error)
+        setErrorDialogOpen(true)
         return
       }
 
@@ -163,7 +181,8 @@ export default function SettingsPage() {
       setIsAddUserOpen(false)
       fetchUsers()
     } catch {
-      alert("An unexpected error occurred")
+      setErrorMessage("An unexpected error occurred")
+      setErrorDialogOpen(true)
     } finally {
       setIsSubmitting(false)
     }
@@ -190,7 +209,8 @@ export default function SettingsPage() {
       const data = await response.json()
 
       if (!response.ok) {
-        alert("Failed to update user: " + data.error)
+        setErrorMessage("Failed to update user: " + data.error)
+        setErrorDialogOpen(true)
         return
       }
 
@@ -202,7 +222,8 @@ export default function SettingsPage() {
         description: "User has been updated successfully.",
       })
     } catch {
-      alert("An unexpected error occurred")
+      setErrorMessage("An unexpected error occurred")
+      setErrorDialogOpen(true)
     } finally {
       setIsProcessing(false)
     }
@@ -227,7 +248,8 @@ export default function SettingsPage() {
       const data = await response.json()
 
       if (!response.ok) {
-        alert("Failed to update user status: " + data.error)
+        setErrorMessage("Failed to update user status: " + data.error)
+        setErrorDialogOpen(true)
         return
       }
 
@@ -239,7 +261,183 @@ export default function SettingsPage() {
         description: `User has been ${!togglingUser.is_active ? 'enabled' : 'disabled'} successfully.`,
       })
     } catch {
-      alert("An unexpected error occurred")
+      setErrorMessage("An unexpected error occurred")
+      setErrorDialogOpen(true)
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const handleAddBankAccount = async () => {
+    if (!newBankAccount.name || !newBankAccount.bank_name || !newBankAccount.account_number) return
+
+    setIsSubmittingBank(true)
+    try {
+      const { error } = await supabase
+        .from("bank_accounts")
+        .insert({
+          name: newBankAccount.name,
+          bank_name: newBankAccount.bank_name,
+          account_number: newBankAccount.account_number,
+        })
+
+      if (error) {
+        toast.error({
+          title: "Error",
+          description: "Failed to create bank account: " + error.message,
+        })
+        return
+      }
+
+      setNewBankAccount({ name: "", bank_name: "", account_number: "" })
+      setIsAddBankOpen(false)
+      fetchBankAccounts()
+      toast.success({
+        title: "Bank Account Added",
+        description: "Bank account has been created successfully.",
+      })
+    } catch {
+      toast.error({
+        title: "Error",
+        description: "An unexpected error occurred.",
+      })
+    } finally {
+      setIsSubmittingBank(false)
+    }
+  }
+
+  const checkBankAccountUsage = async (bankAccountId: string) => {
+    const { count, error } = await supabase
+      .from("billing_invoices")
+      .select("*", { count: "exact", head: true })
+      .eq("bank_account_id", bankAccountId)
+
+    if (error) {
+      return false
+    }
+
+    return (count ?? 0) > 0
+  }
+
+  const handleDeleteBankAccount = async () => {
+    if (!deletingBankAccount) return
+
+    setIsSubmittingBank(true)
+    try {
+      // Check if bank account is referenced in billing_invoices
+      const inUse = await checkBankAccountUsage(deletingBankAccount.id)
+      if (inUse) {
+        setBankAccountInUse(true)
+        toast.error({
+          title: "Cannot Delete",
+          description: "This bank account cannot be deleted because it is referenced by one or more invoices.",
+        })
+        return
+      }
+
+      const { error } = await supabase
+        .from("bank_accounts")
+        .delete()
+        .eq("id", deletingBankAccount.id)
+
+      if (error) {
+        toast.error({
+          title: "Error",
+          description: "Failed to delete bank account: " + error.message,
+        })
+        return
+      }
+
+      setIsDeleteBankDialogOpen(false)
+      setDeletingBankAccount(null)
+      fetchBankAccounts()
+      toast.success({
+        title: "Bank Account Deleted",
+        description: "Bank account has been deleted successfully.",
+      })
+    } catch {
+      toast.error({
+        title: "Error",
+        description: "An unexpected error occurred.",
+      })
+    } finally {
+      setIsSubmittingBank(false)
+    }
+  }
+
+  const checkUserUsage = async (userId: string) => {
+    // Check all tables that reference auth.users directly
+    const checks = await Promise.all([
+      // Prepared/approved by references (RESTRICT - blocks deletion)
+      supabase.from("billing_invoices").select("*", { count: "exact", head: true }).eq("prepared_by", userId),
+      supabase.from("journal_entries").select("*", { count: "exact", head: true }).eq("prepared_by", userId),
+      supabase.from("general_vouchers").select("*", { count: "exact", head: true }).eq("prepared_by", userId),
+      // Signature tables (will be deleted by trigger)
+      supabase.from("invoice_signatures").select("*", { count: "exact", head: true }).eq("user_id", userId),
+      supabase.from("journal_entry_signatures").select("*", { count: "exact", head: true }).eq("user_id", userId),
+      supabase.from("general_voucher_signatures").select("*", { count: "exact", head: true }).eq("user_id", userId),
+      // Notifications (will be deleted by trigger)
+      supabase.from("notifications").select("*", { count: "exact", head: true }).eq("user_id", userId),
+    ])
+
+    // Count RESTRICT references that block deletion (prepared_by fields)
+    const blockingRefs = (checks[0].count ?? 0) + (checks[1].count ?? 0) + (checks[2].count ?? 0)
+
+    // Count references that will be cleaned up
+    const cleanupRefs = checks.slice(3).reduce((sum, check) => sum + (check.count ?? 0), 0)
+
+    return { hasBlockingRefs: blockingRefs > 0, cleanupCount: cleanupRefs }
+  }
+
+  const handleDeleteUser = async () => {
+    if (!deletingUser) return
+
+    setIsProcessing(true)
+    try {
+      // Check if user is referenced anywhere
+      const usage = await checkUserUsage(deletingUser.id)
+      if (usage.hasBlockingRefs) {
+        setUserInUse(true)
+        setUserCleanupCount(usage.cleanupCount)
+        toast.error({
+          title: "Cannot Delete",
+          description: "This user cannot be deleted because they are referenced by invoices, journal entries, or vouchers they prepared.",
+        })
+        return
+      }
+
+      // Delete user via API (handles all cleanup)
+      const response = await fetch('/api/users', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: deletingUser.id,
+        }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        toast.error({
+          title: "Error",
+          description: "Failed to delete user: " + (data.error || "Unknown error"),
+        })
+        return
+      }
+
+      setIsDeleteUserDialogOpen(false)
+      setDeletingUser(null)
+      fetchUsers()
+      toast.success({
+        title: "User Deleted",
+        description: "User has been deleted successfully.",
+      })
+    } catch {
+      toast.error({
+        title: "Error",
+        description: "An unexpected error occurred.",
+      })
     } finally {
       setIsProcessing(false)
     }
@@ -324,6 +522,19 @@ export default function SettingsPage() {
                   </>
                 )}
               </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  setDeletingUser(user)
+                  setUserInUse(false)
+                  setUserCleanupCount(0)
+                  setIsDeleteUserDialogOpen(true)
+                }}
+                disabled={isSelf}
+                className={isSelf ? "opacity-50 cursor-not-allowed" : ""}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         )
@@ -344,6 +555,35 @@ export default function SettingsPage() {
     {
       accessorKey: "account_number",
       header: "Account Number",
+    },
+    {
+      id: "actions",
+      header: "Actions",
+      cell: ({ row }) => {
+        const bankAccount = row.original
+
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => {
+                  setDeletingBankAccount(bankAccount)
+                  setBankAccountInUse(false)
+                  setIsDeleteBankDialogOpen(true)
+                }}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )
+      },
     },
   ]
 
@@ -450,10 +690,104 @@ export default function SettingsPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Bank Accounts</CardTitle>
-          <Button size="sm">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Bank Account
-          </Button>
+          <Dialog open={isAddBankOpen} onOpenChange={setIsAddBankOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Bank Account
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add New Bank Account</DialogTitle>
+                <DialogDescription>
+                  Add a new bank account for receiving payments.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="bank_name">Bank Name *</Label>
+                  <Input
+                    id="bank_name"
+                    value={newBankAccount.bank_name}
+                    onChange={(e) => setNewBankAccount({ ...newBankAccount, bank_name: e.target.value })}
+                    placeholder="e.g., BCA, Mandiri, BNI"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="account_name">Account Name *</Label>
+                  <Input
+                    id="account_name"
+                    value={newBankAccount.name}
+                    onChange={(e) => setNewBankAccount({ ...newBankAccount, name: e.target.value })}
+                    placeholder="e.g., PT Scholarly Accounting"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="account_number">Account Number *</Label>
+                  <Input
+                    id="account_number"
+                    value={newBankAccount.account_number}
+                    onChange={(e) => setNewBankAccount({ ...newBankAccount, account_number: e.target.value })}
+                    placeholder="1234567890"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsAddBankOpen(false)} disabled={isSubmittingBank}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleAddBankAccount}
+                  disabled={!newBankAccount.name || !newBankAccount.bank_name || !newBankAccount.account_number || isSubmittingBank}
+                >
+                  {isSubmittingBank ? "Adding..." : "Add Bank Account"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Delete Bank Account Dialog */}
+          <Dialog open={isDeleteBankDialogOpen} onOpenChange={setIsDeleteBankDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Delete Bank Account</DialogTitle>
+                <DialogDescription>
+                  {bankAccountInUse ? (
+                    <span className="text-destructive">
+                      This bank account cannot be deleted because it is referenced by one or more invoices.
+                    </span>
+                  ) : (
+                    <>
+                      Are you sure you want to delete the bank account{" "}
+                      <strong>{deletingBankAccount?.name}</strong> ({deletingBankAccount?.bank_name})?
+                      <br />
+                      <br />
+                      This action cannot be undone.
+                    </>
+                  )}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsDeleteBankDialogOpen(false)}
+                  disabled={isSubmittingBank}
+                >
+                  {bankAccountInUse ? "Close" : "Cancel"}
+                </Button>
+                {!bankAccountInUse && (
+                  <Button
+                    onClick={handleDeleteBankAccount}
+                    disabled={isSubmittingBank}
+                    variant="destructive"
+                  >
+                    {isSubmittingBank ? "Deleting..." : "Delete Bank Account"}
+                  </Button>
+                )}
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-4 mb-4">
@@ -681,6 +1015,59 @@ export default function SettingsPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          {/* Delete User Dialog */}
+          <Dialog open={isDeleteUserDialogOpen} onOpenChange={setIsDeleteUserDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Delete User</DialogTitle>
+                <DialogDescription>
+                  {userInUse ? (
+                    <span className="text-destructive">
+                      This user cannot be deleted because they are referenced by invoices, journal entries, or vouchers they prepared.
+                      Remove them from those documents first.
+                    </span>
+                  ) : (
+                    <>
+                      Are you sure you want to delete the user{" "}
+                      <strong>{deletingUser?.full_name}</strong>?
+                      <br />
+                      <br />
+                      This action cannot be undone.
+                      {userCleanupCount > 0 && (
+                        <>
+                          <br />
+                          <br />
+                          <span className="text-muted-foreground">
+                            Note: {userCleanupCount} associated record(s) (signatures, notifications)
+                            will also be removed.
+                          </span>
+                        </>
+                      )}
+                    </>
+                  )}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsDeleteUserDialogOpen(false)}
+                  disabled={isProcessing}
+                >
+                  {userInUse ? "Close" : "Cancel"}
+                </Button>
+                {!userInUse && (
+                  <Button
+                    onClick={handleDeleteUser}
+                    disabled={isProcessing}
+                    variant="destructive"
+                  >
+                    {isProcessing ? "Deleting..." : "Delete User"}
+                  </Button>
+                )}
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-4 mb-4">
@@ -743,6 +1130,18 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Error Dialog */}
+      <ConfirmDialog
+        trigger={null}
+        title="Error"
+        description={errorMessage}
+        confirmText="OK"
+        cancelText=""
+        open={errorDialogOpen}
+        onOpenChange={setErrorDialogOpen}
+        onConfirm={() => setErrorDialogOpen(false)}
+      />
     </div>
   )
 }
