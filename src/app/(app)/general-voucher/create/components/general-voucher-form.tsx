@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
   SelectContent,
@@ -86,7 +86,7 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
 
   // Journal entries selection
   const [categories, setCategories] = useState<JournalEntryCategory[]>([])
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("")
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([])
 
   // Selected journal entry details
   const [linkedInvoices, setLinkedInvoices] = useState<LinkedInvoice[]>([])
@@ -109,6 +109,7 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
           .from("user_profiles")
           .select("id, email, full_name")
           .eq("is_active", true)
+          .is("deleted_at", null)
           .order("full_name", { ascending: true }),
         supabase.auth.getUser(),
       ])
@@ -131,11 +132,11 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
     }
   }, [supabase, isEditMode])
 
-  // Ref to access current selectedCategoryId without triggering refetch
-  const selectedCategoryIdRef = React.useRef(selectedCategoryId)
+  // Ref to access current selectedCategoryIds without triggering refetch
+  const selectedCategoryIdsRef = React.useRef(selectedCategoryIds)
   useEffect(() => {
-    selectedCategoryIdRef.current = selectedCategoryId
-  }, [selectedCategoryId])
+    selectedCategoryIdsRef.current = selectedCategoryIds
+  }, [selectedCategoryIds])
 
   // Fetch journal entry categories (only unused ones, or current selection in edit mode)
   const fetchCategories = useCallback(async () => {
@@ -160,13 +161,13 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
 
       if (error) throw error
 
-      // Filter out used categories, but keep the current selection if in edit mode
+      // Filter out used categories, but keep the current selections if in edit mode
       // Use ref to access current value without making it a dependency
-      const currentSelectedId = selectedCategoryIdRef.current
+      const currentSelectedIds = selectedCategoryIdsRef.current
       const filteredCategories = (allCategories || []).filter(
         (cat) =>
           !usedCategoryIds.has(cat.id) ||
-          (isEditMode && cat.id === currentSelectedId)
+          (isEditMode && currentSelectedIds.includes(cat.id))
       )
 
       setCategories(filteredCategories)
@@ -214,7 +215,7 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
         if (junctionError) throw junctionError
 
         if (junctionData && junctionData.length > 0) {
-          setSelectedCategoryId(junctionData[0].journal_entry_category_id)
+          setSelectedCategoryIds(junctionData.map(j => j.journal_entry_category_id))
         }
       }
     } catch (error) {
@@ -244,8 +245,8 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
   const latestFetchRef = React.useRef<string>("")
 
   // Fetch journal entry details when selection changes
-  const fetchJournalEntryDetails = useCallback(async (categoryId: string) => {
-    if (!categoryId) {
+  const fetchJournalEntryDetails = useCallback(async (categoryIds: string[]) => {
+    if (categoryIds.length === 0) {
       setLinkedInvoices([])
       return
     }
@@ -256,7 +257,7 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
 
     setIsLoadingDetails(true)
     try {
-      // Fetch linked invoices with details - filter by category ID
+      // Fetch linked invoices with details - filter by category IDs
       // This ensures each category only shows its own invoices
       const { data: linkedData, error: linkedError } = await supabase
         .from("account_titles_billing_invoices")
@@ -271,7 +272,7 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
             clients!inner(name, accounts_receivable_code)
           )
         `)
-        .eq("journal_entry_category_id", categoryId)
+        .in("journal_entry_category_id", categoryIds)
 
       if (linkedError) throw linkedError
 
@@ -333,18 +334,20 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
     }
   }, [supabase])
 
-  // Handle category selection change
-  const handleCategoryChange = (categoryId: string) => {
-    setSelectedCategoryId(categoryId)
-    fetchJournalEntryDetails(categoryId)
+  // Handle category selection change (toggle selection)
+  const handleCategoryChange = (categoryId: string, checked: boolean) => {
+    setSelectedCategoryIds(prev => {
+      const newSelection = checked
+        ? [...prev, categoryId]
+        : prev.filter(id => id !== categoryId)
+      return newSelection
+    })
   }
 
-  // Fetch journal entry details when selectedCategoryId changes (for edit mode)
+  // Fetch journal entry details when selectedCategoryIds changes
   useEffect(() => {
-    if (selectedCategoryId) {
-      fetchJournalEntryDetails(selectedCategoryId)
-    }
-  }, [selectedCategoryId, fetchJournalEntryDetails])
+    fetchJournalEntryDetails(selectedCategoryIds)
+  }, [selectedCategoryIds, fetchJournalEntryDetails])
 
   // Build preview entries based on linked invoices
   const previewEntries: PreviewEntry[] = React.useMemo(() => {
@@ -365,20 +368,26 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
       totalAmount += inv.grand_total
     })
 
-    // Category credit entry
-    const selectedCategory = categories.find(c => c.id === selectedCategoryId)
-    if (selectedCategory) {
-      entries.push({
-        billing_invoice_id: null,
-        ar_code: selectedCategory.category_name,
-        category_name: selectedCategory.category_name,
-        isCreditEntry: true,
-        amount: totalAmount,
-      })
-    }
+    // Category credit entries - deduplicate same category names
+    const selectedCategories = categories.filter(c => selectedCategoryIds.includes(c.id))
+
+    // Use Set to track unique category names and only add each once
+    const uniqueCategoryNames = new Set<string>()
+    selectedCategories.forEach((category) => {
+      if (!uniqueCategoryNames.has(category.category_name)) {
+        uniqueCategoryNames.add(category.category_name)
+        entries.push({
+          billing_invoice_id: null,
+          ar_code: category.category_name,
+          category_name: category.category_name,
+          isCreditEntry: true,
+          amount: totalAmount,
+        })
+      }
+    })
 
     return entries
-  }, [linkedInvoices, selectedCategoryId, categories])
+  }, [linkedInvoices, selectedCategoryIds, categories])
 
   // Validation
   const validateForm = (): boolean => {
@@ -400,10 +409,10 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
       return false
     }
 
-    if (!selectedCategoryId) {
+    if (selectedCategoryIds.length === 0) {
       toast({
         title: "Validation Error",
-        description: "Please select a journal entry.",
+        description: "Please select at least one journal entry.",
         variant: "error",
       })
       return false
@@ -473,14 +482,16 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
         voucherIdToUse = newVoucher.id
       }
 
-      // Insert junction record for single selection
-      if (selectedCategoryId) {
+      // Insert junction records for multiple selections
+      if (selectedCategoryIds.length > 0) {
+        const junctionRecords = selectedCategoryIds.map(categoryId => ({
+          general_voucher_id: voucherIdToUse,
+          journal_entry_category_id: categoryId,
+        }))
+
         const { error: junctionError } = await supabase
           .from("general_voucher_journal_entries")
-          .insert({
-            general_voucher_id: voucherIdToUse,
-            journal_entry_category_id: selectedCategoryId,
-          })
+          .insert(junctionRecords)
 
         if (junctionError) throw junctionError
       }
@@ -586,7 +597,7 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
             <Input
               id="reference"
               type="text"
-              placeholder="Enter reference number"
+              placeholder="Enter reference"
               value={reference}
               onChange={(e) => setReference(e.target.value)}
             />
@@ -608,11 +619,7 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
               No journal entries found.
             </div>
           ) : (
-            <RadioGroup
-              value={selectedCategoryId}
-              onValueChange={handleCategoryChange}
-              className="rounded-md border overflow-auto"
-            >
+            <div className="rounded-md border overflow-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -627,28 +634,24 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
                     <TableRow
                       key={category.id}
                       className={
-                        selectedCategoryId === category.id
+                        selectedCategoryIds.includes(category.id)
                           ? "bg-muted/50 cursor-pointer"
                           : "cursor-pointer"
                       }
-                      onClick={() => handleCategoryChange(category.id)}
+                      onClick={() => handleCategoryChange(category.id, !selectedCategoryIds.includes(category.id))}
                     >
                       <TableCell>
-                        <RadioGroupItem
-                          value={category.id}
-                          id={category.id}
+                        <Checkbox
+                          checked={selectedCategoryIds.includes(category.id)}
+                          onCheckedChange={(checked) => handleCategoryChange(category.id, checked === true)}
+                          onClick={(e) => e.stopPropagation()}
                         />
                       </TableCell>
                       <TableCell>
                         {category.reference || "-"}
                       </TableCell>
                       <TableCell className="font-medium">
-                        <label
-                          htmlFor={category.id}
-                          className="cursor-pointer flex items-center gap-2"
-                        >
-                          {category.category_name}
-                        </label>
+                        {category.category_name}
                       </TableCell>
                       <TableCell>
                         {category.remarks || "-"}
@@ -657,11 +660,11 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
                   ))}
                 </TableBody>
               </Table>
-            </RadioGroup>
+            </div>
           )}
 
           {/* Journal Entry Preview */}
-          {selectedCategoryId && (
+          {selectedCategoryIds.length > 0 && (
             <div className="mt-6 space-y-4">
               {isLoadingDetails ? (
                 <div className="flex items-center justify-center h-32">
@@ -680,14 +683,19 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
                       <Table>
                         <TableHeader>
                           <TableRow className="bg-muted/50">
-                            <TableCell colSpan={4} className="py-2">
-                              <div className="flex items-center gap-2">
+                            <TableCell colSpan={3} className="py-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-sm font-medium text-muted-foreground">
-                                  Journal Entry Reference:
+                                  Journal Entry References ({selectedCategoryIds.length}):
                                 </span>
-                                <span className="text-sm font-semibold text-blue-600">
-                                  {categories.find(c => c.id === selectedCategoryId)?.reference || "-"}
-                                </span>
+                                {selectedCategoryIds.map((id, index) => (
+                                  <span key={id} className="text-sm font-semibold text-blue-600">
+                                    {categories.find(c => c.id === id)?.reference || "-"}
+                                    {index < selectedCategoryIds.length - 1 && (
+                                      <span className="text-muted-foreground">, </span>
+                                    )}
+                                  </span>
+                                ))}
                               </div>
                             </TableCell>
                           </TableRow>
@@ -695,7 +703,6 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
                             <TableHead className="border-l">Account Titles</TableHead>
                             <TableHead className="text-right w-32 border-l">Debit</TableHead>
                             <TableHead className="text-right w-32 border-l">Credit</TableHead>
-                            <TableHead className="w-48 border-l">Source</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -717,14 +724,6 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
                                 {entry.isCreditEntry
                                   ? `₱${entry.amount.toFixed(2)}`
                                   : ""
-                                }
-                              </TableCell>
-                              <TableCell className="border-l text-xs text-muted-foreground">
-                                {entry.isCreditEntry
-                                  ? "Revenue Credit"
-                                  : linkedInvoices.find(inv =>
-                                      inv.billing_invoice_id === entry.billing_invoice_id
-                                    )?.invoice_number || "-"
                                 }
                               </TableCell>
                             </TableRow>
@@ -804,7 +803,7 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
         </Button>
         <Button
           onClick={handleSave}
-          disabled={isSaving || !date || !particulars.trim() || !selectedCategoryId || !preparedById || !checkedById || !approvedById}
+          disabled={isSaving || !date || !particulars.trim() || selectedCategoryIds.length === 0 || !preparedById || !checkedById || !approvedById}
           className="min-w-[120px]"
         >
           {isSaving ? (

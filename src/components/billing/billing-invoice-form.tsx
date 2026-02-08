@@ -202,14 +202,15 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
     lineItems.some((item) => item.description.trim() !== "" && item.amount > 0)
 
   const generateInvoiceNumber = async () => {
-    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "")
-    const { count } = await supabase
-      .from("billing_invoices")
-      .select("*", { count: "exact", head: true })
-      .like("invoice_number", `INV-${dateStr}%`)
+    // Call the database function to generate invoice number atomically
+    const { data, error } = await supabase.rpc("generate_invoice_number")
 
-    const sequence = String((count || 0) + 1).padStart(3, "0")
-    return `INV-${dateStr}-${sequence}`
+    if (error) {
+      console.error("Failed to generate invoice number:", error)
+      throw new Error("Failed to generate invoice number")
+    }
+
+    return data
   }
 
   const saveInvoice = async (status: "draft" | "for_approval") => {

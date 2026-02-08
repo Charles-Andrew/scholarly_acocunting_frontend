@@ -76,30 +76,30 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
         }
       }
 
-      // Fetch associated journal entry category
+      // Fetch associated journal entry categories
       const { data: junctionData, error: junctionError } = await supabase
         .from("general_voucher_journal_entries")
         .select("journal_entry_category_id")
         .eq("general_voucher_id", resolvedParams.id)
-        .single()
 
-      if (junctionError && junctionError.code !== "PGRST116") throw junctionError
+      if (junctionError) throw junctionError
 
-      let category: GeneralVoucherJournalEntryCategory | null = null
+      let categories: GeneralVoucherJournalEntryCategory[] = []
       let linkedInvoices: GeneralVoucherLinkedInvoice[] = []
 
-      if (junctionData?.journal_entry_category_id) {
-        // Fetch category details
-        const { data: categoryData, error: categoryError } = await supabase
+      const categoryIds = junctionData?.map(j => j.journal_entry_category_id) || []
+
+      if (categoryIds.length > 0) {
+        // Fetch category details for all selected categories
+        const { data: categoriesData, error: categoriesError } = await supabase
           .from("journal_entry_categories")
           .select("id, category_name, reference, remarks")
-          .eq("id", junctionData.journal_entry_category_id)
-          .single()
+          .in("id", categoryIds)
 
-        if (categoryError) throw categoryError
-        category = categoryData
+        if (categoriesError) throw categoriesError
+        categories = categoriesData || []
 
-        // Fetch linked invoices filtered by category ID
+        // Fetch linked invoices filtered by all category IDs
         const { data: linkedData, error: linkedError } = await supabase
           .from("account_titles_billing_invoices")
           .select(`
@@ -111,7 +111,7 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
               clients!inner(name, accounts_receivable_code)
             )
           `)
-          .eq("journal_entry_category_id", junctionData.journal_entry_category_id)
+          .in("journal_entry_category_id", categoryIds)
 
         if (linkedError) throw linkedError
 
@@ -143,6 +143,9 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
       const { data: usersData } = await supabase
         .from("user_profiles")
         .select("id, email, full_name, position")
+        .eq("is_active", true)
+        .is("deleted_at", null)
+        .order("full_name", { ascending: true })
 
       if (usersData) {
         const formattedUsers = usersData.map((u) => ({
@@ -184,7 +187,7 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
       setVoucher({
         ...voucherData,
         recipient,
-        journal_entry_categories: category,
+        journal_entry_categories: categories,
         linked_invoices: linkedInvoices,
       })
     } catch {
@@ -326,15 +329,19 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
       })
     })
 
-    // Credit entry from category
-    if (voucher.journal_entry_categories) {
-      entries.push({
-        account_title: voucher.journal_entry_categories.category_name,
-        debit: null,
-        credit: voucher.amount,
-        source: "Revenue Credit",
-      })
-    }
+    // Credit entries from all selected categories - deduplicate same category names
+    const uniqueCategoryNames = new Set<string>()
+    voucher.journal_entry_categories?.forEach((category) => {
+      if (!uniqueCategoryNames.has(category.category_name)) {
+        uniqueCategoryNames.add(category.category_name)
+        entries.push({
+          account_title: category.category_name,
+          debit: null,
+          credit: voucher.amount,
+          source: "Revenue Credit",
+        })
+      }
+    })
 
     return entries
   }, [voucher])

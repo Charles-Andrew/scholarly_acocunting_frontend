@@ -74,6 +74,6 @@ export type VoucherDetail = GeneralVoucher & {
     position?: string | null
     signature_image?: string | null
   } | null
-  journal_entry_categories?: GeneralVoucherJournalEntryCategory | null
+  journal_entry_categories?: GeneralVoucherJournalEntryCategory[]
   linked_invoices: GeneralVoucherLinkedInvoice[]
 }

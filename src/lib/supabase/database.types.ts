@@ -370,6 +370,21 @@ export type Database = {
         }
         Relationships: []
       }
+      invoice_number_sequences: {
+        Row: {
+          date_str: string
+          last_sequence: number
+        }
+        Insert: {
+          date_str: string
+          last_sequence?: number
+        }
+        Update: {
+          date_str?: string
+          last_sequence?: number
+        }
+        Relationships: []
+      }
       invoice_signatures: {
         Row: {
           id: string
@@ -556,7 +571,9 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      delete_user: { Args: { target_user_id: string }; Returns: undefined }
       generate_gv_id: { Args: never; Returns: string }
+      generate_invoice_number: { Args: never; Returns: string }
       get_users_for_invoices: {
         Args: never
         Returns: {

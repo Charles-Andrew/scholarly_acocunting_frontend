@@ -121,7 +121,12 @@ export default function GenerateJournalEntriesPage() {
   const fetchUsers = useCallback(async () => {
     try {
       const [{ data: usersData }, { data: { user } }] = await Promise.all([
-        supabase.from("user_profiles").select("id, email, full_name"),
+        supabase
+          .from("user_profiles")
+          .select("id, email, full_name")
+          .eq("is_active", true)
+          .is("deleted_at", null)
+          .order("full_name", { ascending: true }),
         supabase.auth.getUser(),
       ])
 
