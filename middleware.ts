@@ -41,14 +41,16 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // Get session - this also refreshes the token
-  const { data: { session } } = await supabase.auth.getSession();
+  // Get user - this verifies the session with Supabase Auth server
+  // IMPORTANT: Never use getSession() for authentication checks as it only
+  // reads from cookies locally and doesn't verify with the server
+  const { data: { user } } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
 
   // Handle root route - redirect based on auth status
   if (pathname === '/') {
-    if (session) {
+    if (user) {
       return NextResponse.redirect(new URL('/dashboard', request.url));
     } else {
       return NextResponse.redirect(new URL('/login', request.url));
@@ -57,7 +59,7 @@ export async function middleware(request: NextRequest) {
 
   // Redirect unauthenticated users from protected routes
   if (protectedRoutes.some((route) => pathname.startsWith(route))) {
-    if (!session) {
+    if (!user) {
       const redirectUrl = new URL('/login', request.url);
       redirectUrl.searchParams.set('redirectTo', pathname);
       return NextResponse.redirect(redirectUrl);
@@ -66,7 +68,7 @@ export async function middleware(request: NextRequest) {
 
   // Redirect authenticated users away from public auth routes
   if (publicRoutes.some((route) => pathname.startsWith(route))) {
-    if (session) {
+    if (user) {
       return NextResponse.redirect(new URL('/dashboard', request.url));
     }
   }
@@ -78,6 +80,6 @@ export const config = {
   matcher: [
     // Match all routes including root
     '/',
-    '/((?!_next/static|_next/image|favicon.ico|public).*)',
+    '/((?!_next/static|_next/image|favicon.ico|public|logout).*)',
   ],
 };

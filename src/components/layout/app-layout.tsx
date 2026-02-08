@@ -109,6 +109,7 @@ export function AppLayout({
   const [userProfile, setUserProfile] = useState<{ full_name: string | null } | null>(null)
   const { setTheme, resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
+  const [authLoading, setAuthLoading] = useState(true)
 
   useEffect(() => {
     // Use timeout to avoid synchronous setState in effect (prevents cascading renders)
@@ -130,16 +131,24 @@ export function AppLayout({
             .then(({ data }) => {
               setUserProfile(data)
             })
+        } else {
+          // No user - redirect to login
+          window.location.replace('/login')
         }
       })
       .catch(() => {
+        // Error getting user - redirect to login
+        window.location.replace('/login')
+      })
+      .finally(() => {
+        setAuthLoading(false)
       })
 
     const { data: { subscription } } = onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
         setUser(null)
         setUserProfile(null)
-        window.location.href = '/login'
+        window.location.replace('/login')
       } else if (session?.user) {
         setUser(session.user)
         supabase
@@ -158,12 +167,14 @@ export function AppLayout({
     }
   }, [])
 
-  const handleLogout = async () => {
-    try {
-      await fetch('/logout', { method: 'POST' })
-    } catch {
-      window.location.href = '/login'
-    }
+  const handleLogout = () => {
+    // Use form submission to properly handle the redirect
+    const form = document.createElement('form')
+    form.method = 'POST'
+    form.action = '/logout'
+    document.body.appendChild(form)
+    form.submit()
+    document.body.removeChild(form)
   }
 
   const getFirstName = () => {
@@ -173,6 +184,23 @@ export function AppLayout({
 
     // Title case
     return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase()
+  }
+
+  // Show loading state while checking auth - prevents flash of dashboard
+  if (authLoading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // If no user after auth check, don't render (redirect will happen)
+  if (!user) {
+    return null
   }
 
   return (

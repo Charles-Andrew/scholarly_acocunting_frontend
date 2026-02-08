@@ -63,11 +63,20 @@ export default function SettingsPage() {
     email: "",
     full_name: "",
     position: "",
+    password: "",
+    confirm_password: "",
   })
+  const [passwordMatchStatus, setPasswordMatchStatus] = React.useState<"idle" | "matching" | "mismatch">("idle")
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [isSignatureModalOpen, setIsSignatureModalOpen] = React.useState(false)
   const [editingUser, setEditingUser] = React.useState<UserProfile | null>(null)
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false)
+  const [editPasswordData, setEditPasswordData] = React.useState({
+    current_password: "",
+    new_password: "",
+    confirm_password: "",
+  })
+  const [editPasswordMatchStatus, setEditPasswordMatchStatus] = React.useState<"idle" | "matching" | "mismatch">("idle")
   const [isToggleDialogOpen, setIsToggleDialogOpen] = React.useState(false)
   const [togglingUser, setTogglingUser] = React.useState<UserProfile | null>(null)
   const [isProcessing, setIsProcessing] = React.useState(false)
@@ -89,6 +98,42 @@ export default function SettingsPage() {
   const [errorMessage, setErrorMessage] = React.useState("")
 
   const supabase = createClient()
+
+  // Debounced password match check for Add User dialog
+  React.useEffect(() => {
+    if (!newUser.password || !newUser.confirm_password) {
+      setPasswordMatchStatus("idle")
+      return
+    }
+
+    const timer = setTimeout(() => {
+      if (newUser.password === newUser.confirm_password) {
+        setPasswordMatchStatus("matching")
+      } else {
+        setPasswordMatchStatus("mismatch")
+      }
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [newUser.password, newUser.confirm_password])
+
+  // Debounced password match check for Edit User dialog
+  React.useEffect(() => {
+    if (!editPasswordData.new_password || !editPasswordData.confirm_password) {
+      setEditPasswordMatchStatus("idle")
+      return
+    }
+
+    const timer = setTimeout(() => {
+      if (editPasswordData.new_password === editPasswordData.confirm_password) {
+        setEditPasswordMatchStatus("matching")
+      } else {
+        setEditPasswordMatchStatus("mismatch")
+      }
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [editPasswordData.new_password, editPasswordData.confirm_password])
 
   const fetchBankAccounts = React.useCallback(async () => {
     try {
@@ -150,8 +195,35 @@ export default function SettingsPage() {
     }
   }, [supabase])
 
+  const validatePassword = (password: string): string | null => {
+    if (password.length < 5) {
+      return "Password must be at least 5 characters long"
+    }
+    return null
+  }
+
   const handleAddUser = async () => {
     if (!newUser.email || !newUser.full_name) return
+
+    // Validate password
+    if (!newUser.password || !newUser.confirm_password) {
+      setErrorMessage("Password and confirm password are required")
+      setErrorDialogOpen(true)
+      return
+    }
+
+    if (newUser.password !== newUser.confirm_password) {
+      setErrorMessage("Password and confirm password do not match")
+      setErrorDialogOpen(true)
+      return
+    }
+
+    const passwordError = validatePassword(newUser.password)
+    if (passwordError) {
+      setErrorMessage(passwordError)
+      setErrorDialogOpen(true)
+      return
+    }
 
     setIsSubmitting(true)
     try {
@@ -165,6 +237,7 @@ export default function SettingsPage() {
           email: newUser.email,
           full_name: newUser.full_name,
           position: newUser.position,
+          password: newUser.password,
         }),
       })
 
@@ -177,7 +250,7 @@ export default function SettingsPage() {
       }
 
       // Reset form and refresh users
-      setNewUser({ email: "", full_name: "", position: "" })
+      setNewUser({ email: "", full_name: "", position: "", password: "", confirm_password: "" })
       setIsAddUserOpen(false)
       fetchUsers()
     } catch {
@@ -191,8 +264,41 @@ export default function SettingsPage() {
   const handleUpdateUser = async () => {
     if (!editingUser || !editingUser.email || !editingUser.full_name) return
 
+    const isEditingSelf = editingUser.id === currentUserId
+
+    // Validate password change if editing self and password fields are filled
+    if (isEditingSelf && (editPasswordData.new_password || editPasswordData.current_password || editPasswordData.confirm_password)) {
+      if (!editPasswordData.current_password) {
+        setErrorMessage("Current password is required to change password")
+        setErrorDialogOpen(true)
+        return
+      }
+      if (!editPasswordData.new_password) {
+        setErrorMessage("New password is required")
+        setErrorDialogOpen(true)
+        return
+      }
+      if (!editPasswordData.confirm_password) {
+        setErrorMessage("Please confirm your new password")
+        setErrorDialogOpen(true)
+        return
+      }
+      if (editPasswordData.new_password !== editPasswordData.confirm_password) {
+        setErrorMessage("New password and confirm password do not match")
+        setErrorDialogOpen(true)
+        return
+      }
+      const passwordError = validatePassword(editPasswordData.new_password)
+      if (passwordError) {
+        setErrorMessage(passwordError)
+        setErrorDialogOpen(true)
+        return
+      }
+    }
+
     setIsProcessing(true)
     try {
+      // First update profile info
       const response = await fetch('/api/users', {
         method: 'PUT',
         headers: {
@@ -214,6 +320,34 @@ export default function SettingsPage() {
         return
       }
 
+      // If editing self and password change requested, update password
+      if (isEditingSelf && editPasswordData.new_password) {
+        const passwordResponse = await fetch('/api/users/password', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            current_password: editPasswordData.current_password,
+            new_password: editPasswordData.new_password,
+          }),
+        })
+
+        const passwordData = await passwordResponse.json()
+
+        if (!passwordResponse.ok) {
+          setErrorMessage("Profile updated but failed to change password: " + passwordData.error)
+          setErrorDialogOpen(true)
+          setIsEditDialogOpen(false)
+          setEditingUser(null)
+          setEditPasswordData({ current_password: "", new_password: "", confirm_password: "" })
+          fetchUsers()
+          return
+        }
+      }
+
+      // Reset password fields
+      setEditPasswordData({ current_password: "", new_password: "", confirm_password: "" })
       setIsEditDialogOpen(false)
       setEditingUser(null)
       fetchUsers()
@@ -891,7 +1025,7 @@ export default function SettingsPage() {
               <DialogHeader>
                 <DialogTitle>Add New User</DialogTitle>
                 <DialogDescription>
-                  Create a new user account. They will receive a temporary password via email.
+                  Create a new user account with a secure password.
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
@@ -923,12 +1057,51 @@ export default function SettingsPage() {
                     placeholder="e.g., Accountant, Manager"
                   />
                 </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="password">Password *</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                    placeholder="Enter password"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Must be at least 5 characters.
+                  </p>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="confirm_password">Confirm Password *</Label>
+                  <Input
+                    id="confirm_password"
+                    type="password"
+                    value={newUser.confirm_password}
+                    onChange={(e) => setNewUser({ ...newUser, confirm_password: e.target.value })}
+                    placeholder="Confirm password"
+                  />
+                  {passwordMatchStatus === "mismatch" && (
+                    <p className="text-xs text-destructive">Passwords do not match</p>
+                  )}
+                  {passwordMatchStatus === "matching" && (
+                    <p className="text-xs text-green-600">Passwords match</p>
+                  )}
+                </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsAddUserOpen(false)} disabled={isSubmitting}>
                   Cancel
                 </Button>
-                <Button onClick={handleAddUser} disabled={!newUser.email || !newUser.full_name || isSubmitting}>
+                <Button
+                  onClick={handleAddUser}
+                  disabled={
+                    !newUser.email ||
+                    !newUser.full_name ||
+                    !newUser.password ||
+                    !newUser.confirm_password ||
+                    newUser.password !== newUser.confirm_password ||
+                    isSubmitting
+                  }
+                >
                   {isSubmitting ? "Creating..." : "Create User"}
                 </Button>
               </DialogFooter>
@@ -936,7 +1109,12 @@ export default function SettingsPage() {
           </Dialog>
 
           {/* Edit User Dialog */}
-          <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+          <Dialog open={isEditDialogOpen} onOpenChange={(open) => {
+            setIsEditDialogOpen(open)
+            if (!open) {
+              setEditPasswordData({ current_password: "", new_password: "", confirm_password: "" })
+            }
+          }}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Edit User</DialogTitle>
@@ -973,12 +1151,69 @@ export default function SettingsPage() {
                     placeholder="e.g., Accountant, Manager"
                   />
                 </div>
+
+                {/* Password Change Section - Only show when editing self */}
+                {editingUser?.id === currentUserId && (
+                  <>
+                    <div className="border-t my-2" />
+                    <div className="text-sm font-medium text-muted-foreground">Change Password</div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit_current_password">Current Password</Label>
+                      <Input
+                        id="edit_current_password"
+                        type="password"
+                        value={editPasswordData.current_password}
+                        onChange={(e) => setEditPasswordData(prev => ({ ...prev, current_password: e.target.value }))}
+                        placeholder="Enter current password"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit_new_password">New Password</Label>
+                      <Input
+                        id="edit_new_password"
+                        type="password"
+                        value={editPasswordData.new_password}
+                        onChange={(e) => setEditPasswordData(prev => ({ ...prev, new_password: e.target.value }))}
+                        placeholder="Enter new password"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Must be at least 5 characters.
+                      </p>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit_confirm_password">Confirm New Password</Label>
+                      <Input
+                        id="edit_confirm_password"
+                        type="password"
+                        value={editPasswordData.confirm_password}
+                        onChange={(e) => setEditPasswordData(prev => ({ ...prev, confirm_password: e.target.value }))}
+                        placeholder="Confirm new password"
+                      />
+                      {editPasswordMatchStatus === "mismatch" && (
+                        <p className="text-xs text-destructive">Passwords do not match</p>
+                      )}
+                      {editPasswordMatchStatus === "matching" && (
+                        <p className="text-xs text-green-600">Passwords match</p>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} disabled={isProcessing}>
                   Cancel
                 </Button>
-                <Button onClick={handleUpdateUser} disabled={!editingUser?.email || !editingUser?.full_name || isProcessing}>
+                <Button
+                  onClick={handleUpdateUser}
+                  disabled={
+                    !editingUser?.email ||
+                    !editingUser?.full_name ||
+                    isProcessing ||
+                    (editingUser?.id === currentUserId &&
+                      !!editPasswordData.new_password &&
+                      editPasswordData.new_password !== editPasswordData.confirm_password)
+                  }
+                >
                   {isProcessing ? "Saving..." : "Save Changes"}
                 </Button>
               </DialogFooter>

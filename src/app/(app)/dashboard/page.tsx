@@ -11,9 +11,16 @@ import { formatCurrency, formatDate } from "@/lib/utils"
 import { RevenueChart } from "@/components/dashboard/revenue-chart"
 import { Badge } from "@/components/ui/badge"
 import type { RecentInvoice, CategoryWithInvoices, RevenueInvoiceRef } from "@/lib/types/dashboard"
+import { redirect } from "next/navigation"
 
 export default async function DashboardPage() {
   const supabase = await createClient()
+
+  // Verify authentication - getUser() validates with Supabase Auth server
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    redirect("/login")
+  }
 
   // Fetch dashboard data
   const [

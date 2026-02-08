@@ -17,11 +17,26 @@ export async function POST(request: Request) {
 
     // Parse request body
     const body = await request.json()
-    const { email, full_name, position } = body
+    const { email, full_name, position, password } = body
 
     if (!email || !full_name) {
       return NextResponse.json(
         { error: "Email and full name are required" },
+        { status: 400 }
+      )
+    }
+
+    if (!password) {
+      return NextResponse.json(
+        { error: "Password is required" },
+        { status: 400 }
+      )
+    }
+
+    // Validate password strength
+    if (password.length < 5) {
+      return NextResponse.json(
+        { error: "Password must be at least 5 characters long" },
         { status: 400 }
       )
     }
@@ -48,7 +63,7 @@ export async function POST(request: Request) {
     const { data: authData, error: createError } =
       await adminClient.auth.admin.createUser({
         email,
-        password: "password123", // Temporary password
+        password,
         email_confirm: true,
         user_metadata: {
           full_name,
