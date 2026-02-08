@@ -27,34 +27,35 @@ export default async function DashboardPage() {
     invoiceStats,
     categoryRevenue,
     recentInvoices,
-    clients
+    clients,
+    signedCount
   ] = await Promise.all([
-    // Invoice statistics
+    // 1. Invoice statistics
     supabase
       .from("billing_invoices")
-      .select("status, amount_due, grand_total, signed")
+      .select("status, amount_due, grand_total")
       .then(({ data }) => {
         const stats = {
           total: data?.length || 0,
           draft: 0,
           pending: 0,
           approved: 0,
-          totalReceivables: 0,
-          signed: 0
+          other: 0,
+          totalReceivables: 0
         }
         data?.forEach(inv => {
           if (inv.status === 'draft') stats.draft++
-          if (inv.status === 'for_approval') stats.pending++
-          if (inv.status === 'approved') {
+          else if (inv.status === 'for_approval') stats.pending++
+          else if (inv.status === 'approved') {
             stats.approved++
             stats.totalReceivables += parseFloat(inv.amount_due || 0)
           }
-          if (inv.signed) stats.signed++
+          else stats.other++
         })
         return stats
       }),
 
-    // Revenue by category
+    // 2. Revenue by category
     supabase
       .from("income_categories")
       .select("name, slug, billing_invoices!left(id, grand_total, status)")
@@ -68,25 +69,31 @@ export default async function DashboardPage() {
         })).filter((cat: {name: string, value: number, count: number}) => cat.value > 0) || []
       }),
 
-    // Recent invoices
+    // 3. Recent invoices
     supabase
       .from("billing_invoices")
-      .select("id, invoice_number, date, amount_due, status, grand_total, signed, clients:client_id(name)")
+      .select("id, invoice_number, date, amount_due, status, grand_total, clients:client_id(name)")
       .order("created_at", { ascending: false })
       .limit(5)
       .then(({ data }) => (data as unknown as RecentInvoice[]) || []),
 
-    // Clients
+    // 4. Clients count
     supabase
       .from("clients")
       .select("id")
-      .then(({ data }) => data?.length || 0)
+      .then(({ data }) => data?.length || 0),
+
+    // 5. Signed invoices count (from invoice_signatures table)
+    supabase
+      .from("invoice_signatures")
+      .select("id", { count: "exact", head: true })
+      .then(({ count }) => count || 0)
   ])
 
   // Calculate derived metrics
   const totalInvoices = invoiceStats.total
   const approvedInvoices = invoiceStats.approved
-  const signedPercentage = totalInvoices > 0 ? Math.round((invoiceStats.signed / totalInvoices) * 100) : 0
+  const signedPercentage = totalInvoices > 0 ? Math.round((signedCount / totalInvoices) * 100) : 0
 
   return (
     <div className="space-y-6">
@@ -135,8 +142,11 @@ export default async function DashboardPage() {
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               {invoiceStats.draft > 0 && <span>{invoiceStats.draft} draft</span>}
               {invoiceStats.pending > 0 && <span>{invoiceStats.pending} pending</span>}
-              {invoiceStats.draft === 0 && invoiceStats.pending === 0 && (
+              {invoiceStats.draft === 0 && invoiceStats.pending === 0 && invoiceStats.approved > 0 && (
                 <span>All approved</span>
+              )}
+              {invoiceStats.draft === 0 && invoiceStats.pending === 0 && invoiceStats.approved === 0 && (
+                <span>No invoices yet</span>
               )}
             </div>
           </CardContent>
@@ -150,7 +160,7 @@ export default async function DashboardPage() {
           <CardContent>
             <div className="text-2xl font-bold">{signedPercentage}%</div>
             <p className="text-xs text-muted-foreground">
-              {invoiceStats.signed} of {totalInvoices} signed
+              {signedCount} of {totalInvoices} signed
             </p>
           </CardContent>
         </Card>
@@ -186,12 +196,11 @@ export default async function DashboardPage() {
             <table className="w-full text-sm text-left">
               <thead className="text-xs text-muted-foreground uppercase bg-muted/50">
                 <tr>
-                  <th className="px-4 py-3 rounded-tl-lg">Invoice #</th>
+    <th className="px-4 py-3 rounded-tl-lg">Invoice #</th>
                   <th className="px-4 py-3">Client</th>
                   <th className="px-4 py-3">Date</th>
                   <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Amount</th>
-                  <th className="px-4 py-3 rounded-tr-lg">Signed</th>
+                  <th className="px-4 py-3 rounded-tr-lg">Amount</th>
                 </tr>
               </thead>
               <tbody>
@@ -218,18 +227,11 @@ export default async function DashboardPage() {
                     <td className="px-4 py-3">
                       {formatCurrency(parseFloat(String(invoice.grand_total || 0)))}
                     </td>
-                    <td className="px-4 py-3">
-                      {invoice.signed ? (
-                        <CheckCircle className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </td>
                   </tr>
                 ))}
                 {recentInvoices.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                    <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
                       No invoices found
                     </td>
                   </tr>
