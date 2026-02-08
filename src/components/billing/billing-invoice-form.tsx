@@ -175,7 +175,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
   const amountDue = grandTotal - (discount || 0)
 
   const formatCurrency = (value: number) => {
-    return `₱${value.toFixed(2)}`
+    return `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
 
   // Check if there are unsaved changes
@@ -341,7 +341,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
           <Link href="/billing-invoice">
@@ -379,7 +379,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
         <CardContent className="space-y-6">
           {/* Step 1: Client Selection */}
           <div className="grid gap-2">
-            <Label htmlFor="client">Client</Label>
+            <Label htmlFor="client">Client <span className="text-red-500">*</span></Label>
             <Select
               value={selectedClientId}
               onValueChange={(value) => {
@@ -389,7 +389,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
               }}
               disabled={hasJournalEntry}
             >
-              <SelectTrigger id="client">
+              <SelectTrigger id="client" className="w-full">
                 <SelectValue placeholder="Select a client" />
               </SelectTrigger>
               <SelectContent>
@@ -407,43 +407,45 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
             )}
           </div>
 
-          {/* Step 2: Income Category Selection */}
+          {/* Step 2 & 3: Income Category and Date - Side by Side */}
           {selectedClientId && (
-            <div className="grid gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
-              <Label htmlFor="income-category">Income Category</Label>
-              <Select
-                value={selectedIncomeCategoryId}
-                onValueChange={(value) => {
-                  setSelectedIncomeCategoryId(value)
-                  setDate("")
-                }}
-                disabled={hasJournalEntry}
-              >
-                <SelectTrigger id="income-category">
-                  <SelectValue placeholder="Select an income category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {incomeCategories.map((category) => (
-                    <SelectItem key={category.id} value={category.id}>
-                      {category.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+            <div className="grid gap-6 sm:grid-cols-2 animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="grid gap-2">
+                <Label htmlFor="income-category">Income Category <span className="text-red-500">*</span></Label>
+                <Select
+                  value={selectedIncomeCategoryId}
+                  onValueChange={(value) => {
+                    setSelectedIncomeCategoryId(value)
+                    setDate("")
+                  }}
+                  disabled={hasJournalEntry}
+                >
+                  <SelectTrigger id="income-category" className="w-full">
+                    <SelectValue placeholder="Select an income category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {incomeCategories.map((category) => (
+                      <SelectItem key={category.id} value={category.id}>
+                        {category.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-          {/* Step 3: Date Selection */}
-          {selectedIncomeCategoryId && (
-            <div className="grid gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
-              <Label htmlFor="date">Date</Label>
-              <Input
-                id="date"
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                disabled={hasJournalEntry}
-              />
+              {selectedIncomeCategoryId && (
+                <div className="grid gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <Label htmlFor="date">Date <span className="text-red-500">*</span></Label>
+                  <Input
+                    id="date"
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    disabled={hasJournalEntry}
+                    className="w-full"
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -552,13 +554,13 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid gap-2">
-            <Label htmlFor="bank-account">Bank Account</Label>
+            <Label htmlFor="bank-account">Bank Account <span className="text-red-500">*</span></Label>
             <Select
               value={selectedBankAccountId}
               onValueChange={setSelectedBankAccountId}
               disabled={hasJournalEntry}
             >
-              <SelectTrigger id="bank-account">
+              <SelectTrigger id="bank-account" className="w-full">
                 <SelectValue placeholder="Select a bank account" />
               </SelectTrigger>
               <SelectContent>
@@ -579,14 +581,14 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
           <CardTitle>Signatures</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid gap-2 max-w-md">
+          <div className="grid gap-2">
             <Label htmlFor="approved-by">Approved By <span className="text-red-500">*</span></Label>
             <Select
               value={approvedById}
               onValueChange={setApprovedById}
               disabled={hasJournalEntry}
             >
-              <SelectTrigger id="approved-by">
+              <SelectTrigger id="approved-by" className="w-full">
                 <SelectValue placeholder="Select a user" />
               </SelectTrigger>
               <SelectContent>
@@ -602,9 +604,9 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
       </Card>
 
       {/* Action Buttons */}
-      <div className="flex justify-end gap-4">
+      <div className="flex flex-col-reverse sm:flex-row justify-end gap-4">
         {hasJournalEntry ? (
-          <Button variant="outline" asChild>
+          <Button variant="outline" asChild className="w-full sm:w-auto">
             <Link href="/billing-invoice">Back to Invoices</Link>
           </Button>
         ) : (
@@ -612,7 +614,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
             {hasUnsavedChanges && !isEditMode ? (
               <ConfirmDialog
                 trigger={
-                  <Button variant="outline" disabled={isSaving}>
+                  <Button variant="outline" disabled={isSaving} className="w-full sm:w-auto">
                     Cancel
                   </Button>
                 }
@@ -625,7 +627,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
                 destructive
               />
             ) : (
-              <Button variant="outline" asChild disabled={isSaving}>
+              <Button variant="outline" asChild disabled={isSaving} className="w-full sm:w-auto">
                 <Link href="/billing-invoice">Cancel</Link>
               </Button>
             )}
@@ -634,6 +636,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
               onClick={() => saveInvoice("draft")}
               disabled={isSaving || !canSaveDraft}
               title={!canSaveDraft ? "Fill in at least one field to save as draft" : ""}
+              className="w-full sm:w-auto"
             >
               {isSaving ? "Saving..." : "Save as Draft"}
             </Button>
@@ -641,6 +644,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
               onClick={() => saveInvoice("for_approval")}
               disabled={isSaving || !canFinalize}
               title={!canFinalize ? "Fill in all required fields to submit" : ""}
+              className="w-full sm:w-auto"
             >
               {isSaving ? "Saving..." : "Submit for Approval"}
             </Button>

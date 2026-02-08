@@ -105,11 +105,15 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
           .select(`
             id,
             billing_invoice_id,
+            journal_entry_category_id,
             billing_invoices!inner(
               invoice_number,
               grand_total,
+              discount,
+              amount_due,
               clients!inner(name, accounts_receivable_code)
-            )
+            ),
+            journal_entry_categories!inner(category_name)
           `)
           .in("journal_entry_category_id", categoryIds)
 
@@ -119,13 +123,19 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
           const linkData = link as {
             id: string
             billing_invoice_id: string
+            journal_entry_category_id: string
             billing_invoices: {
               invoice_number: string
               grand_total: number
+              discount: number
+              amount_due: number
               clients: {
                 name: string
                 accounts_receivable_code: string
               }
+            }
+            journal_entry_categories: {
+              category_name: string
             }
           }
           return {
@@ -134,7 +144,11 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
             invoice_number: linkData.billing_invoices.invoice_number,
             client_name: linkData.billing_invoices.clients.name,
             grand_total: Number(linkData.billing_invoices.grand_total),
+            discount: Number(linkData.billing_invoices.discount || 0),
+            amount_due: Number(linkData.billing_invoices.amount_due || linkData.billing_invoices.grand_total),
             ar_code: linkData.billing_invoices.clients.accounts_receivable_code || "",
+            category_id: linkData.journal_entry_category_id,
+            category_name: linkData.journal_entry_categories?.category_name || "Uncategorized",
           }
         })
       }
@@ -319,28 +333,37 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
       source: string
     }[] = []
 
-    // Debit entries from invoices
+    // Debit entries from invoices - use amount_due (after discount)
     voucher.linked_invoices.forEach((inv) => {
       entries.push({
         account_title: inv.ar_code || "Accounts Receivable",
-        debit: inv.grand_total,
+        debit: inv.amount_due || inv.grand_total,
         credit: null,
         source: inv.invoice_number,
       })
     })
 
-    // Credit entries from all selected categories - deduplicate same category names
-    const uniqueCategoryNames = new Set<string>()
-    voucher.journal_entry_categories?.forEach((category) => {
-      if (!uniqueCategoryNames.has(category.category_name)) {
-        uniqueCategoryNames.add(category.category_name)
-        entries.push({
-          account_title: category.category_name,
-          debit: null,
-          credit: voucher.amount,
-          source: "Revenue Credit",
-        })
+    // Group invoices by category and sum amounts per category
+    const categoryAmounts: Record<string, number> = {}
+
+    voucher.linked_invoices.forEach((inv) => {
+      const categoryName = inv.category_name || "Uncategorized"
+      const invoiceAmount = inv.amount_due || inv.grand_total
+
+      if (!categoryAmounts[categoryName]) {
+        categoryAmounts[categoryName] = 0
       }
+      categoryAmounts[categoryName] += invoiceAmount
+    })
+
+    // Create credit entries - one per unique category with summed amounts
+    Object.entries(categoryAmounts).forEach(([categoryName, totalAmount]) => {
+      entries.push({
+        account_title: categoryName,
+        debit: null,
+        credit: totalAmount,
+        source: "Revenue Credit",
+      })
     })
 
     return entries
@@ -404,11 +427,6 @@ export default function GeneralVoucherDetailPage({ params }: GeneralVoucherPageP
           <Button variant="outline" onClick={handlePrint}>
             <Printer className="mr-2 h-4 w-4" />
             Print
-          </Button>
-          <Button asChild>
-            <Link href={`/general-voucher/${voucher.id}/edit`}>
-              Edit Voucher
-            </Link>
           </Button>
         </div>
       </div>

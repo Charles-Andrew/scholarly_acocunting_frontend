@@ -60,7 +60,11 @@ export type GeneralVoucherLinkedInvoice = {
   invoice_number: string
   client_name: string
   grand_total: number
+  discount: number
+  amount_due: number
   ar_code: string
+  category_id: string
+  category_name: string
 }
 
 /**

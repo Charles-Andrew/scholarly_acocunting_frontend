@@ -25,6 +25,8 @@ export type InvoiceForJournalEntry = {
   invoice_number: string
   client_name: string
   grand_total: number
+  discount: number
+  amount_due: number
   date: string
 }
 
@@ -59,6 +61,8 @@ export type LinkedInvoice = {
   invoice_number: string
   client_name: string
   grand_total: number
+  discount: number
+  amount_due: number
   ar_code: string
   category_name: string
   items?: {

@@ -9,7 +9,7 @@ import {
   getPaginationRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react"
+import { ChevronLeft, ChevronRight, Pencil, Trash2, Eye, Search } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 
 import { Button } from "@/components/ui/button"
@@ -186,10 +186,7 @@ export default function BillingInvoicePage() {
             {(invoice.status === "for_approval" || invoice.status === "approved") && (
               <Button variant="ghost" size="icon" asChild>
                 <Link href={`/billing-invoice/${invoice.id}/view`}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-eye">
-                    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
-                    <circle cx="12" cy="12" r="3"/>
-                  </svg>
+                  <Eye className="h-4 w-4" />
                 </Link>
               </Button>
             )}
@@ -253,10 +250,12 @@ export default function BillingInvoicePage() {
         <CardContent>
           <div className="flex items-center gap-4 mb-4">
             <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Search invoices..."
                 value={globalFilter}
                 onChange={(e) => setGlobalFilter(e.target.value)}
+                className="pl-10"
               />
             </div>
           </div>

@@ -26,6 +26,8 @@ interface LinkedInvoice {
   invoice_number: string
   client_name: string
   grand_total: number
+  discount: number
+  amount_due: number
   ar_code: string
   category_name: string
   date: string
@@ -84,6 +86,8 @@ export default function JournalEntryDetailPage() {
           billing_invoices!inner(
             invoice_number,
             grand_total,
+            discount,
+            amount_due,
             date,
             income_category_id,
             income_categories:income_category_id(name),
@@ -102,6 +106,8 @@ export default function JournalEntryDetailPage() {
           billing_invoices: {
             invoice_number: string
             grand_total: number
+            discount: number
+            amount_due: number
             date: string
             income_categories: { name: string } | null
             clients: {
@@ -118,6 +124,8 @@ export default function JournalEntryDetailPage() {
           invoice_number: invoice.invoice_number,
           client_name: client.name,
           grand_total: Number(invoice.grand_total),
+          discount: Number(invoice.discount || 0),
+          amount_due: Number(invoice.amount_due || invoice.grand_total),
           ar_code: client.accounts_receivable_code || "",
           category_name: invoice.income_categories?.name || "Uncategorized",
           date: invoice.date,
@@ -298,16 +306,16 @@ export default function JournalEntryDetailPage() {
     Object.entries(categoryGroups).forEach(([category, invs]) => {
       let categoryTotal = 0
 
-      // Invoice debit entries (AR debit)
+      // Invoice debit entries (AR debit) - use amount_due (after discount)
       invs.forEach((inv) => {
         entries.push({
           billing_invoice_id: inv.billing_invoice_id,
           ar_code: inv.ar_code || "",
           category_name: category,
           isCreditEntry: false,
-          amount: inv.grand_total,
+          amount: inv.amount_due,
         })
-        categoryTotal += inv.grand_total
+        categoryTotal += inv.amount_due
       })
 
       // Category credit entry (revenue credit)

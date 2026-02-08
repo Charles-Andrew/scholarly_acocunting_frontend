@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { ArrowLeft, Loader2, CheckCircle2, Trash2 } from "lucide-react"
+import { Input } from "@/components/ui/input"
 import { toast } from "@/hooks/use-toast"
 import Link from "next/link"
 import type { InvoiceForJournalEntry } from "@/lib/types/journal-entry"
@@ -44,6 +45,8 @@ interface InvoiceWithItems extends InvoiceForJournalEntry {
   ar_code?: string
   income_category_name?: string
   totalAmount?: number
+  discount: number
+  amount_due: number
 }
 
 export default function GenerateJournalEntriesPage() {
@@ -70,6 +73,8 @@ export default function GenerateJournalEntriesPage() {
           invoice_number,
           date,
           grand_total,
+          discount,
+          amount_due,
           clients:client_id (name, accounts_receivable_code),
           income_categories:income_category_id (name),
           billing_invoice_items (id, description, amount)
@@ -102,6 +107,8 @@ export default function GenerateJournalEntriesPage() {
             ar_code: clientsData?.accounts_receivable_code || "",
             income_category_name: categoriesData?.name || "",
             grand_total: inv.grand_total,
+            discount: inv.discount || 0,
+            amount_due: inv.amount_due || inv.grand_total,
             date: inv.date,
             items: (inv.billing_invoice_items as unknown as InvoiceLineItem[]) || [],
           }
@@ -230,7 +237,8 @@ export default function GenerateJournalEntriesPage() {
 
     invoices.forEach((invoice) => {
       if (selectedInvoiceIds.has(invoice.id)) {
-        const totalAmount = invoice.items?.reduce((sum, item) => sum + item.amount, 0) || 0
+        // Use amount_due (after discount) instead of summing items
+        const totalAmount = invoice.amount_due || invoice.grand_total || 0
 
         if (totalAmount === 0) return
 
@@ -398,7 +406,7 @@ export default function GenerateJournalEntriesPage() {
   }
 
   const formatCurrency = (value: number) => {
-    return `₱${value.toFixed(2)}`
+    return `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
 
   // Generate next category reference
@@ -481,7 +489,7 @@ export default function GenerateJournalEntriesPage() {
   const remarksRowSpans = getRemarksRowSpan()
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-4 md:p-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
           <Link href="/journal-entries">
@@ -493,23 +501,23 @@ export default function GenerateJournalEntriesPage() {
 
       {/* Date Field */}
       <div className="space-y-2">
-        <Label htmlFor="entry-date" className="text-lg">
+        <Label htmlFor="entry-date">
           Entry Date <span className="text-red-500">*</span>
         </Label>
-        <input
+        <Input
           id="entry-date"
           type="date"
           required
           value={entryDate}
           onChange={(e) => setEntryDate(e.target.value)}
-          className="flex h-10 w-full max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full sm:max-w-xs"
         />
       </div>
 
       {/* Invoice Selection */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <Label className="text-lg">Select Invoices</Label>
+          <Label>Select Invoices</Label>
           {selectedInvoiceIds.size > 0 && (
             <Button variant="ghost" size="sm" onClick={() => {
               setSelectedInvoiceIds(new Set())
@@ -520,7 +528,7 @@ export default function GenerateJournalEntriesPage() {
             </Button>
           )}
         </div>
-        <div className="rounded-md border">
+        <div className="rounded-md border overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -532,7 +540,7 @@ export default function GenerateJournalEntriesPage() {
                 </TableHead>
                 <TableHead>Invoice</TableHead>
                 <TableHead>Client</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
+                <TableHead className="text-right">Amount Due</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -544,8 +552,8 @@ export default function GenerateJournalEntriesPage() {
                 </TableRow>
               ) : invoices.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="h-24 text-center">
-                    No approved invoices without journal entries
+                  <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                    No approved invoices available
                   </TableCell>
                 </TableRow>
               ) : (
@@ -560,7 +568,18 @@ export default function GenerateJournalEntriesPage() {
                     <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
                     <TableCell>{invoice.client_name}</TableCell>
                     <TableCell className="text-right">
-                      {formatCurrency(invoice.grand_total)}
+                      {invoice.discount > 0 ? (
+                        <div className="flex flex-col items-end">
+                          <span className="line-through text-muted-foreground text-xs">
+                            {formatCurrency(invoice.grand_total)}
+                          </span>
+                          <span className="font-medium">
+                            {formatCurrency(invoice.amount_due)}
+                          </span>
+                        </div>
+                      ) : (
+                        formatCurrency(invoice.grand_total)
+                      )}
                     </TableCell>
                   </TableRow>
                 ))
@@ -572,16 +591,16 @@ export default function GenerateJournalEntriesPage() {
 
       {/* Preview */}
       <div className="space-y-4">
-        <Label className="text-lg">Preview</Label>
-        <div className="rounded-md border">
+        <Label>Preview</Label>
+        <div className="rounded-md border overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="border-l">Account Titles</TableHead>
-                <TableHead className="text-right w-32 border-l">Debit</TableHead>
-                <TableHead className="text-right w-32 border-l">Credit</TableHead>
-                <TableHead className="w-48 border-l">Remarks</TableHead>
-                <TableHead className="w-32 border-l">Actions</TableHead>
+                <TableHead>Account Titles</TableHead>
+                <TableHead className="text-right w-32">Debit</TableHead>
+                <TableHead className="text-right w-32">Credit</TableHead>
+                <TableHead className="w-48 text-center">Remarks</TableHead>
+                <TableHead className="w-32 text-center">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -598,21 +617,21 @@ export default function GenerateJournalEntriesPage() {
                     return (
                       <TableRow
                         key={index}
-                        className={entry.isCreditEntry ? "font-semibold" : ""}
+                        className={entry.isCreditEntry ? "font-semibold bg-muted/30" : ""}
                       >
-                        <TableCell className="border-l pl-8">
+                        <TableCell className={entry.isCreditEntry ? "pl-8" : ""}>
                           {entry.ar_code || "-"}
                         </TableCell>
-                        <TableCell className="text-right border-l">
+                        <TableCell className="text-right">
                           {!entry.isCreditEntry ? formatCurrency(entry.amount) : ""}
                         </TableCell>
-                        <TableCell className="text-right border-l">
+                        <TableCell className="text-right">
                           {entry.isCreditEntry ? formatCurrency(entry.amount) : ""}
                         </TableCell>
                         {rowSpan > 0 && (
-                          <TableCell className="border-l align-middle text-center" rowSpan={rowSpan}>
+                          <TableCell className="align-middle text-center" rowSpan={rowSpan}>
                             {categoryRemarks[entry.category_name] ? (
-                              <span className="text-xs text-muted-foreground italic">
+                              <span className="text-xs text-muted-foreground">
                                 {categoryRemarks[entry.category_name]}
                               </span>
                             ) : (
@@ -621,7 +640,7 @@ export default function GenerateJournalEntriesPage() {
                           </TableCell>
                         )}
                         {rowSpan > 0 && (
-                          <TableCell className="border-l align-middle text-center" rowSpan={rowSpan}>
+                          <TableCell className="align-middle text-center" rowSpan={rowSpan}>
                             <RemarkModal
                               category={entry.category_name}
                               existingRemark={categoryRemarks[entry.category_name]}
@@ -632,6 +651,13 @@ export default function GenerateJournalEntriesPage() {
                       </TableRow>
                     )
                   })}
+                  {/* Totals Row */}
+                  <TableRow className="border-t-2 font-semibold">
+                    <TableCell>Total</TableCell>
+                    <TableCell className="text-right">{formatCurrency(totalDebit)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(totalCredit)}</TableCell>
+                    <TableCell colSpan={2} />
+                  </TableRow>
                 </>
               )}
             </TableBody>
@@ -645,12 +671,12 @@ export default function GenerateJournalEntriesPage() {
       </div>
 
       {/* Approved By */}
-      <div className="space-y-2 max-w-md">
-        <Label htmlFor="approved-by" className="text-lg">
+      <div className="space-y-2">
+        <Label htmlFor="approved-by">
           Approved By <span className="text-red-500">*</span>
         </Label>
         <Select value={approvedById} onValueChange={setApprovedById}>
-          <SelectTrigger id="approved-by" className="w-full">
+          <SelectTrigger id="approved-by" className="w-full sm:max-w-xs">
             <SelectValue placeholder="Select a user" />
           </SelectTrigger>
           <SelectContent>
@@ -664,13 +690,14 @@ export default function GenerateJournalEntriesPage() {
       </div>
 
       {/* Actions */}
-      <div className="flex justify-end gap-4 pt-4 border-t">
-        <Button variant="outline" asChild disabled={generating}>
-          <Link href="/journal-entries">Cancel</Link>
+      <div className="flex flex-col-reverse sm:flex-row justify-end gap-4 pt-4 border-t">
+        <Button variant="outline" asChild className="w-full sm:w-auto" disabled={generating}>
+          <Link href="/journal-entries" tabIndex={generating ? -1 : undefined}>Cancel</Link>
         </Button>
         <Button
           onClick={handleGenerate}
           disabled={selectedInvoiceIds.size === 0 || previewEntries.length === 0 || !preparedById || !approvedById || generating}
+          className="w-full sm:w-auto"
         >
           {generating ? (
             <>

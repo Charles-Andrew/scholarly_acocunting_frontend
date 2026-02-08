@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { PDFViewer } from "@react-pdf/renderer"
-import { Send, Loader2, RefreshCcw, Eye, Mail } from "lucide-react"
+import { Send, Loader2, Eye, Mail } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import {
@@ -16,7 +16,6 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/hooks/use-toast"
 import type { Invoice, LineItem } from "@/lib/types/invoice"
 import { InvoicePDFDocument } from "./InvoicePDF"
@@ -37,8 +36,8 @@ interface SendEmailDialogProps {
   onSent?: () => void
 }
 
-const DEFAULT_FROM = "billing@scholarlyconsulting.co"
-const DEFAULT_REPLY_TO = "accounting@scholarlyconsulting.co"
+const DEFAULT_FROM = "info@scholarlyconsulting.co"
+const DEFAULT_REPLY_TO = "info@scholarlyconsulting.co"
 
 const DEFAULT_SUBJECT = "Invoice {{invoice_number}} from Scholarly Accounting"
 
@@ -80,13 +79,6 @@ const DEFAULT_BODY_HTML = `<!DOCTYPE html>
 </body>
 </html>`
 
-const TEMPLATE_VARIABLES = [
-  { key: "invoice_number", description: "Invoice number" },
-  { key: "customer_name", description: "Customer name" },
-  { key: "amount_due", description: "Amount due (formatted)" },
-  { key: "due_date", description: "Due date (formatted)" },
-  { key: "payment_link", description: "Payment link" },
-]
 
 function renderTemplate(template: string, variables: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => variables[key] ?? "")
@@ -272,7 +264,7 @@ export function SendEmailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-full max-w-3xl sm:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Mail className="h-5 w-5" />
@@ -343,49 +335,6 @@ export function SendEmailDialog({
                 placeholder="Email subject line"
               />
             </div>
-
-            {/* Body */}
-            <div className="grid gap-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="body">Message (HTML)</Label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={resetTemplate}
-                  className="h-auto py-1 px-2"
-                >
-                  <RefreshCcw className="h-3 w-3 mr-1" />
-                  Reset to Default
-                </Button>
-              </div>
-              <Textarea
-                id="body"
-                value={bodyHtml}
-                onChange={(e) => setBodyHtml(e.target.value)}
-                rows={12}
-                className="font-mono text-xs"
-                placeholder="HTML email content"
-              />
-            </div>
-
-            {/* Template Variables Help */}
-            <div className="bg-muted p-3 rounded-md">
-              <p className="text-xs font-medium text-muted-foreground mb-2">
-                Available template variables:
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {TEMPLATE_VARIABLES.map((variable) => (
-                  <code
-                    key={variable.key}
-                    className="text-xs bg-background px-2 py-1 rounded border"
-                    title={variable.description}
-                  >
-                    {"{{"}{variable.key}{"}}"}
-                  </code>
-                ))}
-              </div>
-            </div>
           </TabsContent>
 
           <TabsContent value="preview" className="mt-4">
@@ -397,7 +346,7 @@ export function SendEmailDialog({
           </TabsContent>
         </Tabs>
 
-        <DialogFooter className="gap-2 sm:gap-0">
+        <DialogFooter className="gap-3">
           <Button
             type="button"
             variant="outline"

@@ -40,7 +40,11 @@ interface LinkedInvoice {
   invoice_number: string
   client_name: string
   grand_total: number
+  discount: number
+  amount_due: number
   ar_code: string
+  category_id: string
+  category_name: string
   items?: {
     description: string
     amount: number
@@ -92,8 +96,8 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
   const [linkedInvoices, setLinkedInvoices] = useState<LinkedInvoice[]>([])
   const [isLoadingDetails, setIsLoadingDetails] = useState(false)
 
-  // Computed amount based on selected journal entry
-  const amount = linkedInvoices.reduce((sum, inv) => sum + inv.grand_total, 0)
+  // Computed amount based on selected journal entry - use amount_due (after discount)
+  const amount = linkedInvoices.reduce((sum, inv) => sum + (inv.amount_due || inv.grand_total), 0)
 
   // Loading states
   const [isLoading, setIsLoading] = useState(isEditMode)
@@ -268,9 +272,12 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
           billing_invoices!inner(
             invoice_number,
             grand_total,
+            discount,
+            amount_due,
             date,
             clients!inner(name, accounts_receivable_code)
-          )
+          ),
+          journal_entry_categories!inner(category_name)
         `)
         .in("journal_entry_category_id", categoryIds)
 
@@ -281,14 +288,20 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
         const linkData = link as {
           id: string
           billing_invoice_id: string
+          journal_entry_category_id: string
           billing_invoices: {
             invoice_number: string
             grand_total: number
+            discount: number
+            amount_due: number
             date: string
             clients: {
               name: string
               accounts_receivable_code: string
             }
+          }
+          journal_entry_categories: {
+            category_name: string
           }
         }
         const invoice = linkData.billing_invoices
@@ -299,7 +312,11 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
           invoice_number: invoice.invoice_number,
           client_name: client.name,
           grand_total: Number(invoice.grand_total),
+          discount: Number(invoice.discount || 0),
+          amount_due: Number(invoice.amount_due || invoice.grand_total),
           ar_code: client.accounts_receivable_code || "",
+          category_id: linkData.journal_entry_category_id,
+          category_name: linkData.journal_entry_categories?.category_name || "Uncategorized",
         }
       })
 
@@ -354,40 +371,45 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
     if (linkedInvoices.length === 0) return []
 
     const entries: PreviewEntry[] = []
-    let totalAmount = 0
 
-    // Invoice debit entries
+    // Invoice debit entries - use amount_due (after discount)
     linkedInvoices.forEach((inv) => {
+      const invoiceAmount = inv.amount_due || inv.grand_total
       entries.push({
         billing_invoice_id: inv.billing_invoice_id,
         ar_code: inv.ar_code || "",
-        category_name: "",
+        category_name: inv.category_name,
         isCreditEntry: false,
-        amount: inv.grand_total,
+        amount: invoiceAmount,
       })
-      totalAmount += inv.grand_total
     })
 
-    // Category credit entries - deduplicate same category names
-    const selectedCategories = categories.filter(c => selectedCategoryIds.includes(c.id))
+    // Group invoices by category and sum amounts per category
+    const categoryAmounts: Record<string, number> = {}
 
-    // Use Set to track unique category names and only add each once
-    const uniqueCategoryNames = new Set<string>()
-    selectedCategories.forEach((category) => {
-      if (!uniqueCategoryNames.has(category.category_name)) {
-        uniqueCategoryNames.add(category.category_name)
-        entries.push({
-          billing_invoice_id: null,
-          ar_code: category.category_name,
-          category_name: category.category_name,
-          isCreditEntry: true,
-          amount: totalAmount,
-        })
+    linkedInvoices.forEach((inv) => {
+      const categoryName = inv.category_name || "Uncategorized"
+      const invoiceAmount = inv.amount_due || inv.grand_total
+
+      if (!categoryAmounts[categoryName]) {
+        categoryAmounts[categoryName] = 0
       }
+      categoryAmounts[categoryName] += invoiceAmount
+    })
+
+    // Create credit entries - one per unique category with summed amounts
+    Object.entries(categoryAmounts).forEach(([categoryName, totalAmount]) => {
+      entries.push({
+        billing_invoice_id: null,
+        ar_code: categoryName,
+        category_name: categoryName,
+        isCreditEntry: true,
+        amount: totalAmount,
+      })
     })
 
     return entries
-  }, [linkedInvoices, selectedCategoryIds, categories])
+  }, [linkedInvoices])
 
   // Validation
   const validateForm = (): boolean => {
@@ -516,6 +538,14 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
     }
   }
 
+  // Format currency with PHP locale
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat("en-PH", {
+      style: "currency",
+      currency: "PHP",
+    }).format(value)
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -525,7 +555,7 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-4 md:p-6">
       <div className="flex items-center gap-4">
         <Button variant="outline" size="icon" asChild>
           <Link href="/general-voucher">
@@ -542,15 +572,15 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
           <CardTitle>Voucher Details</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="grid gap-2">
               <Label htmlFor="recipient">To (Recipient)</Label>
               <Select
                 value={recipientId}
                 onValueChange={setRecipientId}
                 disabled={isFetchingUsers}
               >
-                <SelectTrigger id="recipient">
+                <SelectTrigger id="recipient" className="w-full">
                   <SelectValue placeholder="Select a recipient (optional)" />
                 </SelectTrigger>
                 <SelectContent>
@@ -564,7 +594,7 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
               </Select>
             </div>
 
-            <div className="space-y-2">
+            <div className="grid gap-2">
               <Label htmlFor="date">
                 Date <span className="text-red-500">*</span>
               </Label>
@@ -574,33 +604,38 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
                 required
+                className="w-full"
               />
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="particulars">
-              Particulars <span className="text-red-500">*</span>
-            </Label>
-            <Textarea
-              id="particulars"
-              placeholder="Enter voucher particulars/description"
-              value={particulars}
-              onChange={(e) => setParticulars(e.target.value)}
-              rows={3}
-              required
-            />
-          </div>
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="grid gap-2 sm:col-span-2">
+              <Label htmlFor="particulars">
+                Particulars <span className="text-red-500">*</span>
+              </Label>
+              <Textarea
+                id="particulars"
+                placeholder="Enter voucher particulars/description"
+                value={particulars}
+                onChange={(e) => setParticulars(e.target.value)}
+                rows={3}
+                required
+                className="w-full"
+              />
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="reference">Reference</Label>
-            <Input
-              id="reference"
-              type="text"
-              placeholder="Enter reference"
-              value={reference}
-              onChange={(e) => setReference(e.target.value)}
-            />
+            <div className="grid gap-2">
+              <Label htmlFor="reference">Reference</Label>
+              <Input
+                id="reference"
+                type="text"
+                placeholder="Enter reference"
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+                className="w-full"
+              />
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -700,34 +735,50 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
                             </TableCell>
                           </TableRow>
                           <TableRow>
-                            <TableHead className="border-l">Account Titles</TableHead>
-                            <TableHead className="text-right w-32 border-l">Debit</TableHead>
-                            <TableHead className="text-right w-32 border-l">Credit</TableHead>
+                            <TableHead>Account Titles</TableHead>
+                            <TableHead className="text-right w-32">Debit</TableHead>
+                            <TableHead className="text-right w-32">Credit</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {previewEntries.map((entry, index) => (
                             <TableRow
                               key={index}
-                              className={entry.isCreditEntry ? "font-semibold" : ""}
+                              className={entry.isCreditEntry ? "font-semibold bg-muted/30" : ""}
                             >
-                              <TableCell className="border-l pl-8">
+                              <TableCell className={entry.isCreditEntry ? "pl-8" : ""}>
                                 {entry.ar_code || "-"}
                               </TableCell>
-                              <TableCell className="text-right border-l">
+                              <TableCell className="text-right">
                                 {!entry.isCreditEntry
-                                  ? `₱${entry.amount.toFixed(2)}`
+                                  ? formatCurrency(entry.amount)
                                   : ""
                                 }
                               </TableCell>
-                              <TableCell className="text-right border-l">
+                              <TableCell className="text-right">
                                 {entry.isCreditEntry
-                                  ? `₱${entry.amount.toFixed(2)}`
+                                  ? formatCurrency(entry.amount)
                                   : ""
                                 }
                               </TableCell>
                             </TableRow>
                           ))}
+                          {/* Totals Row */}
+                          {previewEntries.length > 0 && (
+                            <TableRow className="border-t-2 font-semibold">
+                              <TableCell>Total</TableCell>
+                              <TableCell className="text-right">
+                                {formatCurrency(previewEntries
+                                  .filter(e => !e.isCreditEntry)
+                                  .reduce((sum, e) => sum + e.amount, 0))}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {formatCurrency(previewEntries
+                                  .filter(e => e.isCreditEntry)
+                                  .reduce((sum, e) => sum + e.amount, 0))}
+                              </TableCell>
+                            </TableRow>
+                          )}
                         </TableBody>
                       </Table>
                     </div>
@@ -749,8 +800,8 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
           <CardTitle>Signatures</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="grid gap-2">
               <Label htmlFor="checked-by">
                 Checked By <span className="text-red-500">*</span>
               </Label>
@@ -759,7 +810,7 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
                 onValueChange={setCheckedById}
                 disabled={isFetchingUsers}
               >
-                <SelectTrigger id="checked-by">
+                <SelectTrigger id="checked-by" className="w-full">
                   <SelectValue placeholder="Select a user" />
                 </SelectTrigger>
                 <SelectContent>
@@ -772,7 +823,7 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
               </Select>
             </div>
 
-            <div className="space-y-2">
+            <div className="grid gap-2">
               <Label htmlFor="approved-by">
                 Approved By <span className="text-red-500">*</span>
               </Label>
@@ -781,7 +832,7 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
                 onValueChange={setApprovedById}
                 disabled={isFetchingUsers}
               >
-                <SelectTrigger id="approved-by">
+                <SelectTrigger id="approved-by" className="w-full">
                   <SelectValue placeholder="Select a user" />
                 </SelectTrigger>
                 <SelectContent>
@@ -797,14 +848,14 @@ export function GeneralVoucherForm({ voucherId }: GeneralVoucherFormProps) {
         </CardContent>
       </Card>
 
-      <div className="flex justify-end gap-4">
-        <Button variant="outline" asChild>
-          <Link href="/general-voucher">Cancel</Link>
+      <div className="flex flex-col-reverse sm:flex-row justify-end gap-4">
+        <Button variant="outline" asChild disabled={isSaving} className="w-full sm:w-auto">
+          <Link href="/general-voucher" tabIndex={isSaving ? -1 : undefined}>Cancel</Link>
         </Button>
         <Button
           onClick={handleSave}
           disabled={isSaving || !date || !particulars.trim() || selectedCategoryIds.length === 0 || !preparedById || !checkedById || !approvedById}
-          className="min-w-[120px]"
+          className="w-full sm:w-auto min-w-[120px]"
         >
           {isSaving ? (
             <>
