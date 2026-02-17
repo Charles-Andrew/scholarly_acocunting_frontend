@@ -7,7 +7,8 @@ export async function POST() {
   await supabase.auth.signOut();
 
   // Create response and explicitly clear all Supabase cookies
-  const response = NextResponse.redirect(new URL('/login', 'http://localhost:3000'), {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const response = NextResponse.redirect(new URL('/login', appUrl), {
     status: 302,
   });
 
