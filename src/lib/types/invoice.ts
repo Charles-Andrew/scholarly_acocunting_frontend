@@ -16,6 +16,7 @@ export type Invoice = {
   client_id: string | null
   income_category_id: string | null
   date: string
+  due_date: string
   status: "draft" | "for_approval" | "approved"
   grand_total: number
   discount: number

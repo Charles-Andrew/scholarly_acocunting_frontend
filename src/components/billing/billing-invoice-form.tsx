@@ -52,6 +52,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
   const [selectedClientId, setSelectedClientId] = useState<string>("")
   const [selectedIncomeCategoryId, setSelectedIncomeCategoryId] = useState<string>("")
   const [date, setDate] = useState<string>("")
+  const [dueDate, setDueDate] = useState<string>("")
   const [discount, setDiscount] = useState<number>(0)
   const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>("")
   const [preparedById, setPreparedById] = useState<string>("")
@@ -117,6 +118,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
       setSelectedClientId(invoiceData.client_id || "")
       setSelectedIncomeCategoryId(invoiceData.income_category_id || "")
       setDate(invoiceData.date || "")
+      setDueDate(invoiceData.due_date || "")
       setDiscount(invoiceData.discount || 0)
       setSelectedBankAccountId(invoiceData.bank_account_id || "")
       setPreparedById(invoiceData.prepared_by || "")
@@ -183,6 +185,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
     selectedClientId ||
     selectedIncomeCategoryId ||
     date ||
+    dueDate ||
     selectedBankAccountId ||
     preparedById ||
     approvedById ||
@@ -196,6 +199,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
     selectedClientId &&
     selectedIncomeCategoryId &&
     date &&
+    dueDate &&
     selectedBankAccountId &&
     preparedById &&
     approvedById &&
@@ -214,10 +218,18 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
   }
 
   const saveInvoice = async (status: "draft" | "for_approval") => {
-    if (!selectedClientId || !selectedIncomeCategoryId || !date) {
+    if (!selectedClientId || !selectedIncomeCategoryId || !date || !dueDate) {
       toast.error({
         title: "Missing Fields",
         description: "Please fill in all required fields.",
+      })
+      return
+    }
+
+    if (new Date(dueDate) < new Date(date)) {
+      toast.error({
+        title: "Invalid Due Date",
+        description: "Due date cannot be earlier than date prepared.",
       })
       return
     }
@@ -231,6 +243,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
           .update({
             client_id: selectedClientId,
             income_category_id: selectedIncomeCategoryId,
+            due_date: dueDate,
             date: date,
             status: status,
             grand_total: grandTotal,
@@ -278,6 +291,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
             invoice_number: invoiceNumber,
             client_id: selectedClientId,
             income_category_id: selectedIncomeCategoryId,
+            due_date: dueDate,
             date: date,
             status: status,
             grand_total: grandTotal,
@@ -386,6 +400,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
                 setSelectedClientId(value)
                 setSelectedIncomeCategoryId("")
                 setDate("")
+                setDueDate("")
               }}
               disabled={hasJournalEntry}
             >
@@ -407,9 +422,9 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
             )}
           </div>
 
-          {/* Step 2 & 3: Income Category and Date - Side by Side */}
+          {/* Step 2 & 3: Income Category and Dates - Side by Side */}
           {selectedClientId && (
-            <div className="grid gap-6 sm:grid-cols-2 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="grid gap-6 sm:grid-cols-3 animate-in fade-in slide-in-from-top-2 duration-200">
               <div className="grid gap-2">
                 <Label htmlFor="income-category">Income Category <span className="text-red-500">*</span></Label>
                 <Select
@@ -417,6 +432,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
                   onValueChange={(value) => {
                     setSelectedIncomeCategoryId(value)
                     setDate("")
+                    setDueDate("")
                   }}
                   disabled={hasJournalEntry}
                 >
@@ -435,7 +451,7 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
 
               {selectedIncomeCategoryId && (
                 <div className="grid gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
-                  <Label htmlFor="date">Date <span className="text-red-500">*</span></Label>
+                  <Label htmlFor="date">Date Prepared <span className="text-red-500">*</span></Label>
                   <Input
                     id="date"
                     type="date"
@@ -446,11 +462,26 @@ export function BillingInvoiceForm({ invoiceId }: BillingInvoiceFormProps) {
                   />
                 </div>
               )}
+
+              {selectedIncomeCategoryId && (
+                <div className="grid gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <Label htmlFor="due-date">Due Date <span className="text-red-500">*</span></Label>
+                  <Input
+                    id="due-date"
+                    type="date"
+                    value={dueDate}
+                    min={date || undefined}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    disabled={hasJournalEntry}
+                    className="w-full"
+                  />
+                </div>
+              )}
             </div>
           )}
 
           {/* Step 4: Line Items */}
-          {date && (
+          {date && dueDate && (
             <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
               <div className="flex items-center justify-between">
                 <Label>Line Items</Label>

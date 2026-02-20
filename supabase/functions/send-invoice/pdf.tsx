@@ -38,6 +38,7 @@ interface SignatureImage {
 interface InvoicePDFData {
   invoice_number: string;
   date: string;
+  due_date: string;
   amount_due: number;
   discount: number;
   grand_total: number;
@@ -340,6 +341,8 @@ function InvoicePDF({ data }: InvoicePDFProps) {
           <View style={styles.invoiceNumberSection}>
             <Text style={styles.sectionLabel}>Invoice Number:</Text>
             <Text style={styles.sectionValue}>{data.invoice_number}</Text>
+            <Text style={[styles.sectionLabel, { marginTop: 10 }]}>Due Date:</Text>
+            <Text style={styles.sectionValue}>{formatDate(data.due_date)}</Text>
           </View>
         </View>
 

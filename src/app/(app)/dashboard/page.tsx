@@ -9,7 +9,7 @@ import {
 import { createClient } from "@/lib/supabase/server"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { RevenueChart } from "@/components/dashboard/revenue-chart"
-import { Badge } from "@/components/ui/badge"
+import { InvoiceStatusBadge } from "@/components/billing/invoice-status-badge"
 import type { RecentInvoice, CategoryWithInvoices, RevenueInvoiceRef } from "@/lib/types/dashboard"
 import { redirect } from "next/navigation"
 
@@ -216,13 +216,7 @@ export default async function DashboardPage() {
                       {formatDate(invoice.date)}
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant={
-                        invoice.status === 'approved' ? 'default' :
-                        invoice.status === 'for_approval' ? 'secondary' :
-                        'outline'
-                      }>
-                        {invoice.status}
-                      </Badge>
+                      <InvoiceStatusBadge status={invoice.status} />
                     </td>
                     <td className="px-4 py-3">
                       {formatCurrency(parseFloat(String(invoice.grand_total || 0)))}

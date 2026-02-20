@@ -23,7 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { InvoiceStatusBadge } from "@/components/billing/invoice-status-badge"
 import Link from "next/link"
 import type { Invoice } from "@/lib/types/invoice"
 import { toast } from "@/hooks/use-toast"
@@ -126,20 +126,6 @@ export default function BillingInvoicePage() {
     })
   }
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-      draft: "secondary",
-      for_approval: "outline",
-      approved: "default",
-    }
-    const labels: Record<string, string> = {
-      draft: "Draft",
-      for_approval: "For Approval",
-      approved: "Approved",
-    }
-    return <Badge variant={variants[status] || "outline"}>{labels[status] || status}</Badge>
-  }
-
   const columns: ColumnDef<Invoice>[] = [
     {
       accessorKey: "invoice_number",
@@ -148,8 +134,13 @@ export default function BillingInvoicePage() {
     },
     {
       accessorKey: "date",
-      header: "Date",
+      header: "Date Prepared",
       cell: ({ row }) => formatDate(row.getValue("date")),
+    },
+    {
+      accessorKey: "due_date",
+      header: "Due Date",
+      cell: ({ row }) => formatDate(row.getValue("due_date")),
     },
     {
       accessorKey: "client_name",
@@ -166,7 +157,7 @@ export default function BillingInvoicePage() {
       header: "Status",
       cell: ({ row }) => {
         const status = row.getValue("status") as string
-        return getStatusBadge(status)
+        return <InvoiceStatusBadge status={status} />
       },
     },
     {

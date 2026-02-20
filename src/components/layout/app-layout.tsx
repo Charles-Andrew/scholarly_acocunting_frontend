@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import {
-  GalleryVerticalEnd,
   LayoutDashboard,
   Users,
   FileText,
@@ -15,6 +14,7 @@ import {
   User,
   Receipt,
 } from "lucide-react"
+import Image from "next/image"
 
 import {
   Sidebar,
@@ -203,20 +203,24 @@ export function AppLayout({
     return null
   }
 
+  const sidebarLogoSrc = mounted && resolvedTheme === "dark" ? "/logo-dark.png" : "/logo.png"
+
   return (
     <SidebarProvider>
       <Sidebar>
         <SidebarHeader>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton size="lg" asChild>
-                <a href="/dashboard">
-                  <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-                    <GalleryVerticalEnd className="size-4" />
-                  </div>
-                  <div className="flex flex-col gap-0.5 leading-none">
-                    <span className="font-medium">Scholarly</span>
-                    <span className="">Accounting</span>
+              <SidebarMenuButton size="lg" asChild className="justify-center">
+                <a href="/dashboard" className="flex w-full justify-center">
+                  <div className="relative h-10 w-36 overflow-hidden">
+                    <Image
+                      src={sidebarLogoSrc}
+                      alt="Scholarly Accounting"
+                      fill
+                      priority
+                      className="object-contain object-center"
+                    />
                   </div>
                 </a>
               </SidebarMenuButton>

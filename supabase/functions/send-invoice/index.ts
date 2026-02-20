@@ -25,6 +25,7 @@ interface BillingInvoiceFromDB {
   id: string;
   invoice_number: string;
   date: string;
+  due_date: string;
   amount_due: number;
   discount: number;
   grand_total: number;
@@ -148,6 +149,7 @@ Deno.serve(async (req) => {
         id,
         invoice_number,
         date,
+        due_date,
         amount_due,
         discount,
         grand_total,
@@ -285,6 +287,7 @@ Deno.serve(async (req) => {
     const pdfData: InvoicePDFData = {
       invoice_number: invoiceData.invoice_number,
       date: invoiceData.date,
+      due_date: invoiceData.due_date,
       amount_due: invoiceData.amount_due,
       discount: invoiceData.discount,
       grand_total: invoiceData.grand_total,
@@ -333,16 +336,11 @@ Deno.serve(async (req) => {
         day: "numeric",
       });
 
-    // Calculate due date (30 days from invoice date for billing invoices)
-    const invoiceDate = new Date(invoiceData.date);
-    const dueDate = new Date(invoiceDate);
-    dueDate.setDate(dueDate.getDate() + 30);
-
     const templateVars = {
       invoice_number: invoiceData.invoice_number,
       customer_name: invoiceData.client.name,
       amount_due: formatCurrency(invoiceData.amount_due),
-      due_date: formatDate(dueDate.toISOString()),
+      due_date: formatDate(invoiceData.due_date),
       company_name: "Scholarly Accounting",
       payment_link: `${Deno.env.get("APP_URL") || ""}/billing-invoice/${invoice_id}/pay`,
     };

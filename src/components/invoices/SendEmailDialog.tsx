@@ -100,12 +100,6 @@ function formatDate(dateStr: string): string {
   })
 }
 
-function getDueDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  date.setDate(date.getDate() + 30)
-  return formatDate(date.toISOString())
-}
-
 export function SendEmailDialog({
   invoice,
   lineItems,
@@ -137,7 +131,7 @@ export function SendEmailDialog({
       invoice_number: invoice.invoice_number,
       customer_name: clientName || "Valued Customer",
       amount_due: formatCurrency(invoice.amount_due),
-      due_date: getDueDate(invoice.date),
+      due_date: formatDate(invoice.due_date),
       payment_link: `${window.location.origin}/billing-invoice/${invoice.id}/pay`,
     }
   }, [invoice, clientName])
@@ -249,6 +243,7 @@ export function SendEmailDialog({
   const pdfData = {
     invoice_number: invoice.invoice_number,
     date: invoice.date,
+    due_date: invoice.due_date,
     amount_due: invoice.amount_due,
     discount: invoice.discount,
     grand_total: invoice.grand_total,

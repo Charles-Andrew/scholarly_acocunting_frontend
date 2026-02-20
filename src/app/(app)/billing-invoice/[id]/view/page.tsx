@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client"
 import { ArrowLeft, CheckCircle2, Send, Signature, X } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { InvoiceStatusBadge } from "@/components/billing/invoice-status-badge"
 import { toast } from "@/hooks/use-toast"
 import type { Invoice, LineItem, BillingInvoiceUser } from "@/lib/types/invoice"
 import type { Client } from "@/lib/types"
@@ -141,20 +141,6 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
   const bankAccount = bankAccounts.find((b) => b.id === invoice?.bank_account_id)
   const preparedBy = users.find((u) => u.id === invoice?.prepared_by)
   const approvedBy = users.find((u) => u.id === invoice?.approved_by)
-
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-      draft: "secondary",
-      for_approval: "outline",
-      approved: "default",
-    }
-    const labels: Record<string, string> = {
-      draft: "Draft",
-      for_approval: "For Approval",
-      approved: "Approved",
-    }
-    return <Badge variant={variants[status] || "outline"}>{labels[status] || status}</Badge>
-  }
 
   const handleApprove = async () => {
     try {
@@ -322,7 +308,7 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
             </Link>
           </Button>
           <h1 className="text-3xl font-bold">Billing Invoice</h1>
-          {getStatusBadge(invoice.status)}
+          <InvoiceStatusBadge status={invoice.status} />
         </div>
         <div className="flex items-center gap-2">
           {invoice.status === "for_approval" &&
@@ -382,6 +368,8 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
             <div className="text-right">
               <p className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-1">Invoice Number:</p>
               <p className="text-base text-gray-900">{invoice.invoice_number}</p>
+              <p className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-1 mt-3">Due Date:</p>
+              <p className="text-base text-gray-900">{formatDate(invoice.due_date)}</p>
             </div>
           </div>
         </div>
@@ -391,7 +379,7 @@ export default function ViewBillingInvoicePage({ params }: ViewBillingInvoicePag
           <table className="w-full border-collapse">
             <thead>
               <tr className="border-t border-b border-gray-400">
-                <th className="text-left text-sm font-semibold text-gray-900 uppercase tracking-wider py-3 px-4 w-48">Date</th>
+                <th className="text-left text-sm font-semibold text-gray-900 uppercase tracking-wider py-3 px-4 w-48">Date Prepared</th>
                 <th className="text-left text-sm font-semibold text-gray-900 uppercase tracking-wider py-3 px-4">Description</th>
                 <th className="text-right text-sm font-semibold text-gray-900 uppercase tracking-wider py-3 px-4 w-40">Amount</th>
               </tr>

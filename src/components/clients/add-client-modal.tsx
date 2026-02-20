@@ -59,8 +59,9 @@ export function AddClientModal({ onClientAdded }: AddClientModalProps) {
   const [debouncedName] = useDebounce(nameValue, 300)
 
   React.useEffect(() => {
-    if (debouncedName) {
-      const arCode = `A/R-${debouncedName.replace(/\s+/g, "-").toUpperCase()}`
+    const normalizedName = debouncedName.trim().replace(/\s+/g, " ").toUpperCase()
+    if (normalizedName) {
+      const arCode = `A/R - ${normalizedName}`
       form.setValue("accounts_receivable_code", arCode, { shouldValidate: true })
     } else {
       form.setValue("accounts_receivable_code", "", { shouldValidate: true })

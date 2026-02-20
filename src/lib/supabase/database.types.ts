@@ -165,6 +165,7 @@ export type Database = {
           client_id: string | null
           created_at: string | null
           date: string
+          due_date: string
           discount: number
           grand_total: number
           id: string
@@ -182,6 +183,7 @@ export type Database = {
           client_id?: string | null
           created_at?: string | null
           date: string
+          due_date: string
           discount?: number
           grand_total?: number
           id?: string
@@ -199,6 +201,7 @@ export type Database = {
           client_id?: string | null
           created_at?: string | null
           date?: string
+          due_date?: string
           discount?: number
           grand_total?: number
           id?: string
